@@ -1,6 +1,4 @@
-import { getStorage } from "./storage";
-import type { FileEntry } from "./storage";
-import { readWikiPage, readWikiPageWithFrontmatter, listWikiPages, wikiRelPath } from "./wiki";
+import { readWikiPage, readWikiPageWithFrontmatter, listWikiPages } from "./wiki";
 import { hasLLMKey, callLLM } from "./llm";
 import { loadPageConventions } from "./schema";
 import { extractWikiLinks } from "./links";
@@ -38,35 +36,19 @@ export const INFRASTRUCTURE_FILES = new Set(["index.md", "log.md"]);
 /**
  * Get all content page slugs known to the system.
  *
- * Primary path: read from the `_idx:pages` page-index (O(1) KV read), which
- * aligns lint with the silo-primary read path used by `readWikiPage` /
- * `listWikiPages`.
- *
- * Fallback (page-index not yet seeded): list `.md` files from the flat wiki
- * directory, excluding infrastructure files. This preserves correct orphan /
- * stale-index detection before the first `rebuildPageIndex()` run.
- *
+ * Reads from the `_idx:pages` page-index (O(1) KV read), which aligns lint
+ * with the silo-primary read path used by `readWikiPage` / `listWikiPages`.
+ * Returns `[]` when the page-index is absent or unreadable.
  */
 export async function getOnDiskSlugs(): Promise<string[]> {
   try {
     const idx = await getPageIndex();
     if (idx) return Object.keys(idx);
   } catch (err) {
-    logger.warn("lint", "page-index read failed; falling back to listFiles", err);
+    logger.warn("lint", "page-index read failed", err);
   }
 
-  // Fallback: list flat wiki directory
-  let entries: FileEntry[];
-  try {
-    entries = await getStorage().listFiles(wikiRelPath(""));
-  } catch (err) {
-    logger.warn("lint", "listFiles wiki directory failed:", err);
-    return [];
-  }
-
-  return entries
-    .filter((e) => e.name.endsWith(".md") && !INFRASTRUCTURE_FILES.has(e.name))
-    .map((e) => e.name.replace(/\.md$/, ""));
+  return [];
 }
 
 /**

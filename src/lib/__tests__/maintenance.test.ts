@@ -12,7 +12,7 @@ import {
 import { createThread, addComment } from "../talk";
 import { scanForMaintenance, rebuildDerivedIndexes } from "../maintenance";
 import { listCommonsPages } from "../commons";
-import { _resetStorage } from "../storage";
+import { _resetStorage, getStorage } from "../storage";
 
 let tmpDir: string;
 const saved: Record<string, string | undefined> = {};
@@ -241,6 +241,10 @@ describe("scanForMaintenance", () => {
       path.join(wikiDir, "orphan-page.md"),
       "# Orphan\n\nThis page exists on disk but is not in the index.",
     );
+    await getStorage().putIndex("pages", {
+      "indexed-page": { slug: "indexed-page", title: "indexed-page", summary: "s" },
+      "orphan-page": { slug: "orphan-page", title: "Orphan", summary: "s" },
+    });
     const tasks = await scanForMaintenance();
     expect(tasks).toContainEqual({
       kind: "maintain",
@@ -333,6 +337,10 @@ describe("scanForMaintenance", () => {
       summary: "ML overview.",
       logOp: "ingest",
       crossRefSource: null,
+    });
+    await getStorage().putIndex("pages", {
+      "artificial-intelligence": { slug: "artificial-intelligence", title: "Artificial Intelligence", summary: "s" },
+      "machine-learning": { slug: "machine-learning", title: "Machine Learning", summary: "s" },
     });
     const tasks = await scanForMaintenance();
     expect(tasks).toContainEqual({
