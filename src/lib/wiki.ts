@@ -216,11 +216,11 @@ export async function ensureDirectories(): Promise<void> {
 }
 
 // Re-export frontmatter utilities for backward compatibility
-export { parseFrontmatter, serializeFrontmatter } from "./frontmatter";
+export { parseFrontmatter, serializeFrontmatter, tryParseFrontmatter } from "./frontmatter";
 export type { Frontmatter, ParsedPage } from "./frontmatter";
 
 // Import frontmatter utilities for local use within this module
-import { parseFrontmatter } from "./frontmatter";
+import { parseFrontmatter, tryParseFrontmatter } from "./frontmatter";
 import type { Frontmatter } from "./frontmatter";
 
 // ---------------------------------------------------------------------------
@@ -415,6 +415,27 @@ export async function readWikiPageWithFrontmatter(
   return { ...page, title, frontmatter: data, body };
 }
 
+/**
+ * Non-throwing {@link readWikiPageWithFrontmatter}: a page whose frontmatter is
+ * malformed reads as `null` (logged) rather than throwing.
+ *
+ * Every read path that walks MANY pages — search, graph, the alias index, the
+ * agent context endpoint — goes through this, so a single bad page degrades one
+ * entry instead of 500-ing the request that happened to touch it.
+ */
+export async function tryReadWikiPageWithFrontmatter(
+  slug: string,
+  tag = "wiki",
+): Promise<(WikiPage & { frontmatter: Frontmatter; body: string }) | null> {
+  const page = await readWikiPage(slug);
+  if (!page) return null;
+  const parsed = tryParseFrontmatter(page.content, slug, tag);
+  if (!parsed) return null;
+  const titleMatch = parsed.body.match(/^#\s+(.+)$/m);
+  const title = titleMatch ? titleMatch[1].trim() : page.title;
+  return { ...page, title, frontmatter: parsed.data, body: parsed.body };
+}
+
 /** Write (or overwrite) a wiki page. Ensures the wiki directory exists first. Throws on invalid slug.
  *
  * When `tenant` is provided, writes to the tenant silo path
@@ -571,18 +592,10 @@ export async function scanWikiPagesUncached(): Promise<IndexEntry[]> {
   const baseEntries = await readIndexBaseEntries();
   return Promise.all(
     baseEntries.map(async (entry): Promise<IndexEntry> => {
-      try {
-        const page = await readWikiPageWithFrontmatter(entry.slug);
-        if (!page) return entry;
-        return enrichEntry(entry, page.frontmatter);
-      } catch (err) {
-        logger.warn(
-          "wiki",
-          `listWikiPages: failed to read frontmatter for "${entry.slug}" — falling back to plain entry`,
-          err,
-        );
-        return entry;
-      }
+      // A page that fails to read or parse falls back to its plain index entry,
+      // so one malformed page never breaks the whole list.
+      const page = await tryReadWikiPageWithFrontmatter(entry.slug);
+      return page ? enrichEntry(entry, page.frontmatter) : entry;
     }),
   );
 }

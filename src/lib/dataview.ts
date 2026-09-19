@@ -6,7 +6,7 @@
 // (created, updated, tags, source_count, source_url, etc.). Inspired by
 // the Obsidian Dataview plugin pattern mentioned in the founding vision.
 
-import { listReadableWikiPages, readWikiPageWithFrontmatter, withPageCache } from "./wiki";
+import { listReadableWikiPages, tryReadWikiPageWithFrontmatter, withPageCache } from "./wiki";
 import type { Principal } from "./auth";
 
 // ---------------------------------------------------------------------------
@@ -223,7 +223,7 @@ export async function queryByFrontmatter(
       // Skip the index entry itself (not a real content page)
       if (entry.slug === "index") continue;
 
-      const page = await readWikiPageWithFrontmatter(entry.slug);
+      const page = await tryReadWikiPageWithFrontmatter(entry.slug, "dataview");
       if (!page) continue;
 
       const fm = page.frontmatter;

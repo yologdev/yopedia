@@ -11,7 +11,7 @@
  */
 
 import {
-  readWikiPageWithFrontmatter,
+  tryReadWikiPageWithFrontmatter,
   listReadableWikiPages,
   isAgentScopedType,
   isArtifactType,
@@ -74,7 +74,7 @@ export async function buildWikiGraph(
 
   // First pass: build nodes (with tags) and collect edges
   for (const page of pages) {
-    const wp = await readWikiPageWithFrontmatter(page.slug);
+    const wp = await tryReadWikiPageWithFrontmatter(page.slug, "graph");
     const rawTags = wp?.frontmatter?.tags;
     const tags: string[] = Array.isArray(rawTags)
       ? rawTags.map(String)

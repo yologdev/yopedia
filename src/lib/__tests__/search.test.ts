@@ -155,6 +155,50 @@ describe("searchWikiContent", () => {
     expect(results[0].title).toBe("Neural Networks");
   });
 
+  it("skips a page with malformed frontmatter instead of failing the search", async () => {
+    // Regression: one unparseable page used to throw out of the result loop and
+    // 500 the whole request — for every query whose terms matched that page.
+    await ensureDirectories();
+    await writeWikiPage(
+      "good-note",
+      "# Good Note\n\nAttention mechanisms explained here.",
+    );
+    await writeWikiPage(
+      "broken-note",
+      '---\ntags: [a, "b, c]\n---\n\n# Broken Note\n\nAttention mechanisms explained here.',
+    );
+    await writeWikiPage(
+      "index",
+      "# Index\n\n- [Good Note](good-note.md) — g\n- [Broken Note](broken-note.md) — b",
+    );
+
+    const slugs = (await searchWikiContent("attention")).map((r) => r.slug);
+    expect(slugs).toContain("good-note");
+    expect(slugs).not.toContain("broken-note");
+  });
+
+  it("skips a page with malformed frontmatter in the fuzzy pass too", async () => {
+    await ensureDirectories();
+    // Both pages spell the term with a typo, so the exact pass finds nothing
+    // and the fuzzy pass is what actually reads them.
+    await writeWikiPage(
+      "good-fuzzy",
+      "# Good Fuzzy\n\nAttnetion mechanisms explained here.",
+    );
+    await writeWikiPage(
+      "broken-fuzzy",
+      '---\ntags: [a, "b, c]\n---\n\n# Broken Fuzzy\n\nAttnetion mechanisms explained here.',
+    );
+    await writeWikiPage(
+      "index",
+      "# Index\n\n- [Good Fuzzy](good-fuzzy.md) — g\n- [Broken Fuzzy](broken-fuzzy.md) — b",
+    );
+
+    const slugs = (await fuzzySearchWikiContent("attention")).map((r) => r.slug);
+    expect(slugs).toContain("good-fuzzy");
+    expect(slugs).not.toContain("broken-fuzzy");
+  });
+
   it("excludes agent-scoped pages from general (unscoped) search", async () => {
     await ensureDirectories();
     await writeWikiPage(

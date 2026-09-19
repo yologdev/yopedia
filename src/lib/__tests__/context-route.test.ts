@@ -12,20 +12,20 @@ vi.mock("@/lib/agents", async (importOriginal) => ({
   resolveAgentPages: vi.fn(),
 }));
 vi.mock("@/lib/wiki", () => ({
-  readWikiPageWithFrontmatter: vi.fn(),
+  tryReadWikiPageWithFrontmatter: vi.fn(),
 }));
 vi.mock("@/lib/auth", () => ({
   getPrincipal: vi.fn(),
 }));
 
 import { getAgent, resolveAgentPages } from "@/lib/agents";
-import { readWikiPageWithFrontmatter } from "@/lib/wiki";
+import { tryReadWikiPageWithFrontmatter } from "@/lib/wiki";
 import { getPrincipal } from "@/lib/auth";
 import { GET } from "@/app/api/agents/[id]/context/route";
 
 const mockedGetAgent = vi.mocked(getAgent);
 const mockedResolve = vi.mocked(resolveAgentPages);
-const mockedRead = vi.mocked(readWikiPageWithFrontmatter);
+const mockedRead = vi.mocked(tryReadWikiPageWithFrontmatter);
 const mockedPrincipal = vi.mocked(getPrincipal);
 
 type Page = { frontmatter: Record<string, unknown>; body: string };

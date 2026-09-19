@@ -12,7 +12,7 @@
 // keeping the commons to one page per source. Mirrors the in-memory, rebuilt-
 // from-frontmatter approach of `alias-index.ts`.
 
-import { listWikiPages, readWikiPageWithFrontmatter } from "./wiki";
+import { listWikiPages, tryReadWikiPageWithFrontmatter } from "./wiki";
 
 // ---------------------------------------------------------------------------
 // Types + singleton
@@ -122,7 +122,7 @@ export async function buildSourceIndex(): Promise<SourceIndex> {
 
   for (const entry of pages) {
     if (entry.slug === "index" || entry.slug === "log") continue;
-    const page = await readWikiPageWithFrontmatter(entry.slug);
+    const page = await tryReadWikiPageWithFrontmatter(entry.slug, "source-index");
     if (!page) continue;
 
     const url = page.frontmatter.source_url;

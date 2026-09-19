@@ -73,7 +73,20 @@ export async function scanForMaintenance(
     if (tasks.length >= cap) break;
     if (entry.slug === "index" || entry.slug === "log") continue; // infra
 
-    const page = await readWikiPageWithFrontmatter(entry.slug);
+    // Deliberately NOT the guarded reader: a malformed page must not read as
+    // `null` here, or the stale-index branch below would propose dropping a
+    // live page's index entry. Skip it instead — lint reports it as malformed.
+    let page: Awaited<ReturnType<typeof readWikiPageWithFrontmatter>>;
+    try {
+      page = await readWikiPageWithFrontmatter(entry.slug);
+    } catch (err) {
+      logger.warn(
+        "maintenance",
+        `skipping "${entry.slug}" — malformed frontmatter:`,
+        err,
+      );
+      continue;
+    }
     if (!page) {
       // Index entry with no page file → stale-index. The fix re-verifies the
       // file is genuinely missing before dropping the entry, so a transient
