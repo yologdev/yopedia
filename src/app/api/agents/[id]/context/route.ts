@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { getAgent, resolveAgentPages } from "@/lib/agents";
-import { readWikiPageWithFrontmatter } from "@/lib/wiki";
+import { tryReadWikiPageWithFrontmatter } from "@/lib/wiki";
 import { getPrincipal, type Principal } from "@/lib/auth";
 import { canReadFrontmatter } from "@/lib/authz";
 import { mapWithConcurrency, READ_CONCURRENCY } from "@/lib/concurrency";
@@ -16,7 +16,7 @@ const PAGE_SEPARATOR = "\n\n---\n\n";
 
 /**
  * Read wiki pages by slug, concatenate their content with a separator.
- * Missing pages are silently skipped with a warning logged.
+ * Missing or unparseable pages are skipped with a warning logged.
  */
 async function loadPages(
   slugs: string[],
@@ -26,7 +26,9 @@ async function loadPages(
   // the dominant latency of the endpoint. Order is preserved so the assembled
   // context stays stable; unreadable/missing pages drop out below.
   const pages = await mapWithConcurrency(slugs, READ_CONCURRENCY, (slug) =>
-    readWikiPageWithFrontmatter(slug),
+    // Guarded read: a page with malformed frontmatter drops out of the
+    // assembled context (logged) instead of 500-ing the whole endpoint.
+    tryReadWikiPageWithFrontmatter(slug, "agents"),
   );
   const contents: string[] = [];
   pages.forEach((page, i) => {

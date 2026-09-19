@@ -16,7 +16,7 @@ import { getStorage } from "./storage";
 import { withFileLock } from "./lock";
 import {
   listWikiPages,
-  readWikiPageWithFrontmatter,
+  tryReadWikiPageWithFrontmatter,
   tenantForOwner,
 } from "./wiki";
 import { logger } from "./logger";
@@ -136,7 +136,7 @@ export async function rebuildOwnerIndex(): Promise<OwnerIndex> {
   const idx: OwnerIndex = {};
   for (const entry of pages) {
     if (entry.slug === "index" || entry.slug === "log") continue;
-    const page = await readWikiPageWithFrontmatter(entry.slug);
+    const page = await tryReadWikiPageWithFrontmatter(entry.slug, "owner-index");
     if (!page) continue;
     const owner =
       typeof page.frontmatter.owner === "string" ? page.frontmatter.owner : "";

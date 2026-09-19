@@ -12,7 +12,7 @@
 // The index is rebuilt from frontmatter on demand and updated incrementally
 // when pages are written.
 
-import { listWikiPages, readWikiPageWithFrontmatter } from "./wiki";
+import { listWikiPages, tryReadWikiPageWithFrontmatter } from "./wiki";
 import { slugify } from "./slugify";
 
 // ---------------------------------------------------------------------------
@@ -79,7 +79,7 @@ export async function buildAliasIndex(): Promise<AliasIndex> {
     }
 
     // Read aliases from frontmatter
-    const page = await readWikiPageWithFrontmatter(entry.slug);
+    const page = await tryReadWikiPageWithFrontmatter(entry.slug, "alias-index");
     if (!page) continue;
 
     const aliases = page.frontmatter.aliases;
@@ -263,7 +263,7 @@ export async function findDuplicateEntities(): Promise<DuplicateEntity[]> {
   for (const entry of pages) {
     if (entry.slug === "index" || entry.slug === "log") continue;
 
-    const page = await readWikiPageWithFrontmatter(entry.slug);
+    const page = await tryReadWikiPageWithFrontmatter(entry.slug, "alias-index");
     const aliases: string[] = [];
     if (page && Array.isArray(page.frontmatter.aliases)) {
       for (const a of page.frontmatter.aliases) {

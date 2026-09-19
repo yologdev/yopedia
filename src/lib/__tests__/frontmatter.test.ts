@@ -924,3 +924,87 @@ describe("normalizeTypedFields", () => {
     });
   });
 });
+
+// ---------------------------------------------------------------------------
+// serialize → parse round-trip
+//
+// The pair must be each other's inverse. The regression that motivated these:
+// an alias carrying a bare apostrophe ("…any test it's allowed to edit") was
+// written unquoted by serializeFrontmatter, then read back by parseFrontmatter
+// as an unterminated single-quoted string — which threw and took down every
+// read path that parsed that page.
+// ---------------------------------------------------------------------------
+describe("serialize → parse round-trip", () => {
+  const roundTripArray = (value: string[]): unknown => {
+    const doc = serializeFrontmatter({ aliases: value }, "# Title\n\nBody\n");
+    return parseFrontmatter(doc).data.aliases;
+  };
+
+  const arrayCases: Array<[string, string[]]> = [
+    ["apostrophe in an unquoted element", ["Your AI agent will pass any test it's allowed to edit"]],
+    ["apostrophes across several elements", ["it's allowed", "another's thing"]],
+    ["apostrophe as the only oddity", ["don't"]],
+    ["embedded double quotes", ['say "hi"']],
+    ["a single unbalanced double quote", ['a "b']],
+    ["element wrapped in single quotes", ["'quoted'"]],
+    ["element wrapped in double quotes", ['"already"']],
+    ["comma and quotes together", ['comma, and "quote"']],
+    ["leading and trailing whitespace", ["  padded  "]],
+    ["brackets", ["[bracketed]"]],
+    ["plain elements", ["alpha", "beta"]],
+    ["empty array", []],
+  ];
+
+  for (const [name, value] of arrayCases) {
+    it(`preserves array values: ${name}`, () => {
+      expect(roundTripArray(value)).toEqual(value);
+    });
+  }
+
+  const scalarCases: Array<[string, string]> = [
+    ["apostrophe", "it's fine"],
+    ["double quotes", 'she said "hi"'],
+    ["colon", "a: b"],
+    ["single-quoted", "'quoted'"],
+    ["leading hash", "#hash"],
+  ];
+
+  for (const [name, value] of scalarCases) {
+    it(`preserves scalar values: ${name}`, () => {
+      const doc = serializeFrontmatter({ title: value }, "# Title\n\nBody\n");
+      expect(parseFrontmatter(doc).data.title).toBe(value);
+    });
+  }
+
+  it("preserves a realistic full frontmatter block", () => {
+    const data = {
+      created: "2026-08-30",
+      source_count: 1,
+      tags: ["reward-hacking", "ai-coding-agents"],
+      confidence: 0.6,
+      owner: "yuanhao--yoyo",
+      visibility: "public",
+      authors: ["yuanhao--yoyo"],
+      contributors: [],
+      disputed: false,
+      aliases: [
+        "Your AI agent will pass any test it's allowed to edit",
+        "reward gaming",
+        "spec gaming",
+      ],
+      type: "agent-knowledge",
+      source_url: "https://example.com/a-post",
+    };
+    const doc = serializeFrontmatter(data, "# Reward Hacking\n\n## Summary\n");
+    const parsed = parseFrontmatter(doc);
+    expect(parsed.data).toEqual(data);
+    expect(parsed.body).toBe("# Reward Hacking\n\n## Summary\n");
+  });
+
+  it("still rejects a genuinely unterminated quoted element", () => {
+    // The opening quote is in delimiter position, so this really is malformed.
+    expect(() => parseFrontmatter('---\ntags: [a, "b, c]\n---\nBody')).toThrow(
+      "unterminated",
+    );
+  });
+});

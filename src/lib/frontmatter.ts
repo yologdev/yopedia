@@ -313,6 +313,10 @@ export function normalizeTypedFields(data: Frontmatter): void {
 /**
  * Split an inline YAML array body like `a, b, "c, d"` into its elements,
  * respecting quoted substrings so commas inside quotes don't split.
+ *
+ * A quote character only DELIMITS when it opens an element (the YAML flow-scalar
+ * rule). Mid-element it is literal text, so a plain apostrophe — `it's allowed` —
+ * stays one unquoted element instead of opening a string that never closes.
  */
 function splitInlineArray(inner: string): string[] {
   const parts: string[] = [];
@@ -322,10 +326,17 @@ function splitInlineArray(inner: string): string[] {
     const ch = inner[i];
     if (quote) {
       buf += ch;
+      // Inside a double-quoted element `\"` is an escaped quote — the mirror of
+      // serializeFrontmatter's escaping — and must not close the string.
+      if (quote === '"' && ch === "\\" && i + 1 < inner.length) {
+        buf += inner[++i];
+        continue;
+      }
       if (ch === quote) quote = null;
       continue;
     }
-    if (ch === '"' || ch === "'") {
+    // Opening position only: nothing but whitespace accumulated so far.
+    if ((ch === '"' || ch === "'") && buf.trim() === "") {
       quote = ch;
       buf += ch;
       continue;
@@ -473,6 +484,27 @@ export function parseFrontmatter(content: string): ParsedPage {
 }
 
 /**
+ * Non-throwing {@link parseFrontmatter}: returns `null` and logs instead of
+ * throwing when a document's frontmatter block is malformed.
+ *
+ * Read paths that walk MANY pages use this, so one unparseable page costs that
+ * page's result instead of failing the whole request. Write paths keep calling
+ * {@link parseFrontmatter} directly — there, rejecting bad input is the point.
+ */
+export function tryParseFrontmatter(
+  content: string,
+  slug: string,
+  tag: string,
+): ParsedPage | null {
+  try {
+    return parseFrontmatter(content);
+  } catch (err) {
+    logger.warn(tag, `skipping "${slug}" — malformed frontmatter:`, err);
+    return null;
+  }
+}
+
+/**
  * Serialize a frontmatter object + body back into a markdown document.
  * The frontmatter block is omitted when `data` is empty.
  *
@@ -505,6 +537,8 @@ export function serializeFrontmatter(
     if (
       s.includes(",") ||
       s.includes('"') ||
+      // A leading quote would be read back as a delimiter, so quote it away.
+      s.startsWith("'") ||
       s.includes("[") ||
       s.includes("]") ||
       s !== s.trim() ||

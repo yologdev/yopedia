@@ -5,7 +5,7 @@
  * LLM prompt building and answer generation.
  */
 
-import { readWikiPage, readWikiPageWithFrontmatter } from "./wiki";
+import { readWikiPage, tryReadWikiPageWithFrontmatter } from "./wiki";
 import { tokenize, buildCorpusStats, bm25Score } from "./bm25";
 import { searchByVector } from "./embeddings";
 import { callLLM, hasLLMKey } from "./llm";
@@ -291,7 +291,7 @@ export async function buildContext(slugs?: string[]): Promise<{
   const supersededBy = new Map<string, string>();
 
   for (const slug of slugs) {
-    const page = await readWikiPageWithFrontmatter(slug);
+    const page = await tryReadWikiPageWithFrontmatter(slug, "query");
     if (page) {
       loadedPages.push(page);
       const supersedes = page.frontmatter.supersedes;

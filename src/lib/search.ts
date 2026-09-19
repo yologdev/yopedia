@@ -2,11 +2,12 @@ import type { IndexEntry } from "./types";
 import { callLLM, hasLLMKey } from "./llm";
 import { withFileLock } from "./lock";
 import { hasLinkTo } from "./links";
-import { parseFrontmatter } from "./frontmatter";
+import { tryParseFrontmatter } from "./frontmatter";
 import { logger } from "./logger";
 import {
   readWikiPage,
   readWikiPageWithFrontmatter,
+  tryReadWikiPageWithFrontmatter,
   listWikiPages,
   listReadableWikiPages,
   withPageCache,
@@ -558,7 +559,10 @@ export async function searchWikiContent(
     const title = titleMatch ? titleMatch[1].trim() : slug;
 
     // Extract summary from index-style content (first paragraph after heading)
-    const parsed = parseFrontmatter(content);
+    // A page whose frontmatter won't parse drops out of the results — it must
+    // never take the whole search down with it.
+    const parsed = tryParseFrontmatter(content, slug, "search");
+    if (!parsed) continue;
     // Read-gate: never return snippets from a private page the caller can't read.
     if (!canReadFrontmatter(parsed.data, principal)) continue;
     const body = parsed.body;
@@ -674,8 +678,9 @@ export async function fuzzySearchWikiContent(
     const titleMatch = content.match(/^#\s+(.+)$/m);
     const title = titleMatch ? titleMatch[1].trim() : slug;
 
-    // Extract summary
-    const parsed = parseFrontmatter(content);
+    // Extract summary (same skip-on-malformed rule as the exact pass above).
+    const parsed = tryParseFrontmatter(content, slug, "search");
+    if (!parsed) continue;
     // Read-gate: never return snippets from a private page the caller can't read.
     if (!canReadFrontmatter(parsed.data, principal)) continue;
     const body = parsed.body;
@@ -740,7 +745,7 @@ export async function slugsForOwner(handle: string): Promise<string[]> {
   const out: string[] = [];
   for (const entry of pages) {
     if (entry.slug === "index" || entry.slug === "log") continue;
-    const page = await readWikiPageWithFrontmatter(entry.slug);
+    const page = await tryReadWikiPageWithFrontmatter(entry.slug, "search");
     if (!page) continue;
     const owner =
       typeof page.frontmatter.owner === "string" ? page.frontmatter.owner : "";

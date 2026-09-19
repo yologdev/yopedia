@@ -17,6 +17,7 @@ import {
   parseFrontmatter,
   serializeFrontmatter,
   readWikiPageWithFrontmatter,
+  tryReadWikiPageWithFrontmatter,
   listRawSources,
   readRawSource,
   findBacklinks,
@@ -1338,6 +1339,35 @@ describe("readWikiPageWithFrontmatter", () => {
     await ensureDirectories();
     const page = await readWikiPageWithFrontmatter("does-not-exist");
     expect(page).toBeNull();
+  });
+});
+
+describe("tryReadWikiPageWithFrontmatter", () => {
+  it("reads a well-formed page exactly like the throwing variant", async () => {
+    const content =
+      "---\ntags: [alpha, beta]\n---\n\n# Titled Page\n\nSome body.\n";
+    await writeWikiPage("fine", content);
+
+    const guarded = await tryReadWikiPageWithFrontmatter("fine");
+    const strict = await readWikiPageWithFrontmatter("fine");
+    expect(guarded).toEqual(strict);
+  });
+
+  it("returns null instead of throwing on malformed frontmatter", async () => {
+    const content = '---\ntags: [a, "b, c]\n---\n\n# Broken\n\nBody.\n';
+    await writeWikiPage("broken", content);
+
+    await expect(readWikiPageWithFrontmatter("broken")).rejects.toThrow(
+      "unterminated",
+    );
+    await expect(tryReadWikiPageWithFrontmatter("broken")).resolves.toBeNull();
+  });
+
+  it("returns null for a missing slug", async () => {
+    await ensureDirectories();
+    await expect(
+      tryReadWikiPageWithFrontmatter("does-not-exist"),
+    ).resolves.toBeNull();
   });
 });
 
