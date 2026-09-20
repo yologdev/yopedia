@@ -64,11 +64,19 @@ describe("page-index", () => {
     expect(await getPageIndex()).toBeNull();
   });
 
-  it("syncPageIndexForPage / remove NO-OP until the index is seeded", async () => {
+  it("removePageIndexForSlug NO-OPs when the index is not seeded", async () => {
     await createPage("a", "owner: alice");
-    await syncPageIndexForPage({ slug: "a", title: "A", summary: "s", owner: "alice" });
     await removePageIndexForSlug("a");
     expect(await getPageIndex()).toBeNull();
+  });
+
+  it("syncPageIndexForPage seeds the index when it does not exist", async () => {
+    await createPage("a", "owner: alice");
+    expect(await getPageIndex()).toBeNull();
+    await syncPageIndexForPage({ slug: "a", title: "A", summary: "s", owner: "alice" });
+    const idx = await getPageIndex();
+    expect(idx).not.toBeNull();
+    expect(idx!["a"]).toEqual({ slug: "a", title: "A", summary: "s", owner: "alice" });
   });
 
   it("listWikiPages fast-path (seeded) equals the per-page scan", async () => {

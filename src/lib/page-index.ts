@@ -41,13 +41,13 @@ export async function getPageIndex(): Promise<PageMetaIndex | null> {
   }
 }
 
-/** Upsert one page's enriched entry. NO-OP until the index is seeded. */
+/** Upsert one page's enriched entry. Seeds the index on first write if absent. */
 export async function syncPageIndexForPage(entry: IndexEntry): Promise<void> {
   await withFileLock(PAGE_INDEX_LOCK, async () => {
     const idx = await getPageIndex();
-    if (idx === null) return; // not seeded — daily rebuild will seed it
-    idx[entry.slug] = entry;
-    await getStorage().putIndex(PAGE_INDEX_KEY, idx);
+    const map = idx ?? {}; // seed on first write instead of bailing
+    map[entry.slug] = entry;
+    await getStorage().putIndex(PAGE_INDEX_KEY, map);
   });
 }
 
