@@ -264,8 +264,15 @@ export async function reconcileSilos(): Promise<ReconcileResult> {
     }
   }
 
-  // ── Reverse pass: find silo files with no index entry (ghosts) ──
+  // ── Reverse pass: remove silo files nothing can reach ──
+  //
+  // Two kinds: a GHOST (no index entry at all) and a STALE DUPLICATE (the slug
+  // is indexed, but its entry resolves to a different tenant — so this copy is
+  // unreachable and will drift out of date). The forward pass has already put
+  // every indexed page where its entry says, so anything left over here is
+  // genuinely surplus.
   const pageSlugs = new Set(pages.map((p) => p.slug));
+  const tenantOf = new Map(pages.map((p) => [p.slug, tenantForOwner(p.owner)]));
   try {
     const tenantDirs = await listSafe("tenants");
     for (const td of tenantDirs) {
@@ -287,7 +294,8 @@ export async function reconcileSilos(): Promise<ReconcileResult> {
         if (f.isDirectory || !f.name.endsWith(".md")) continue;
         const slug = f.name.replace(/\.md$/, "");
         if (SKIP.has(slug)) continue;
-        if (pageSlugs.has(slug)) continue;
+        // Keep it only when this tenant is the one the page resolves to.
+        if (pageSlugs.has(slug) && tenantOf.get(slug) === tenant) continue;
         try {
           await removeSiloForPage(slug, tenant);
           result.removed++;

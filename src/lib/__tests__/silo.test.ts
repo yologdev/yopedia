@@ -159,6 +159,26 @@ describe("reconcileSilos", () => {
     expect(result.alreadyCurrent).toBe(1);
   });
 
+  it("removes a stale duplicate left in a tenant the page no longer resolves to", async () => {
+    // The page moved silos but a copy stayed behind. It is indexed, so the
+    // ghost check alone would keep it — yet nothing can reach it, and it will
+    // drift out of date.
+    const storage = getStorage();
+    await plant("erin", "dup-page", "---\nowner: erin\n---\n# Dup\n\nCurrent.");
+    await plant("yopedia", "dup-page", "---\nowner: erin\n---\n# Dup\n\nStale copy.");
+    await updateIndex([{ slug: "dup-page", title: "Dup", summary: "d" }]);
+    await storage.putIndex("pages", {
+      "dup-page": { slug: "dup-page", title: "Dup", summary: "d", owner: "erin" },
+    });
+
+    const result = await reconcileSilos();
+    expect(result.alreadyCurrent).toBe(1);
+    expect(result.removed).toBe(1);
+    // The reachable copy survives untouched; the unreachable one is gone.
+    expect(await storage.readFile("tenants/erin/wiki/dup-page.md")).toContain("Current.");
+    expect(await storage.fileExists("tenants/yopedia/wiki/dup-page.md")).toBe(false);
+  });
+
   it("removes ghost silo files that have no index entry", async () => {
     const storage = getStorage();
     await plant("alice", "real", "---\nowner: alice\n---\n# Real\n\nContent.");
