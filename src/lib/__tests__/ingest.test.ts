@@ -267,13 +267,20 @@ describe("extractSummary", () => {
 let tmpDir: string;
 let originalWikiDir: string | undefined;
 let originalRawDir: string | undefined;
+let originalDataDir: string | undefined;
 
 beforeEach(async () => {
   tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), "ingest-test-"));
   originalWikiDir = process.env.WIKI_DIR;
   originalRawDir = process.env.RAW_DIR;
+  originalDataDir = process.env.DATA_DIR;
   process.env.WIKI_DIR = path.join(tmpDir, "wiki");
   process.env.RAW_DIR = path.join(tmpDir, "raw");
+  // Silo paths resolve against DATA_DIR (default: cwd). Without this the pages
+  // land outside tmpDir and leak into the next test — which is how a re-ingest
+  // here could dedup onto a page a previous test created.
+  process.env.DATA_DIR = tmpDir;
+  _resetStorage();
 });
 
 afterEach(async () => {
@@ -287,6 +294,12 @@ afterEach(async () => {
   } else {
     process.env.RAW_DIR = originalRawDir;
   }
+  if (originalDataDir === undefined) {
+    delete process.env.DATA_DIR;
+  } else {
+    process.env.DATA_DIR = originalDataDir;
+  }
+  _resetStorage();
   await fs.rm(tmpDir, { recursive: true, force: true });
 });
 

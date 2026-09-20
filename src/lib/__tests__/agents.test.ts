@@ -27,6 +27,7 @@ import {
 } from "../agents";
 import type { UpdateAgentPage } from "../agents";
 import { readWikiPage, readWikiPageWithFrontmatter } from "../wiki";
+import { writePageFixture } from "./helpers/wiki-fixtures";
 import type { AgentProfile } from "../types";
 import { createVault } from "../vault";
 import { _resetStorage, getStorage } from "../storage";
@@ -83,10 +84,9 @@ function makeProfile(overrides: Partial<AgentProfile> = {}): AgentProfile {
   };
 }
 
-/** Write a wiki page to the test wiki dir. */
+/** Write a wiki page where the read path will look for it (#869: silo-only). */
 async function writeTestWikiPage(slug: string, content: string): Promise<void> {
-  const wikiDir = path.join(tmpDir, "wiki");
-  await fs.writeFile(path.join(wikiDir, `${slug}.md`), content, "utf-8");
+  await writePageFixture(slug, content);
 }
 
 // ---------------------------------------------------------------------------

@@ -30,7 +30,11 @@ import {
   listWikiPages,
   tenantWikiRelPath,
   tenantForOwner,
+  wikiRelPath,
+  enrichEntry,
+  parseFrontmatter,
 } from "./wiki";
+import { isEnoent } from "./errors";
 import { rebuildCommonsIndex } from "./commons";
 import { syncSiloForPage } from "./silo";
 
@@ -60,7 +64,26 @@ export async function migrateToTenants(
 ): Promise<MigrationResult> {
   const dryRun = opts.dryRun ?? true;
   const storage = getStorage();
-  const pages = (await listWikiPages()).filter((p) => !SKIP_SLUGS.has(p.slug));
+  // Enrich each index entry by reading the FLAT file directly. `listWikiPages`
+  // enriches through `readWikiPage`, which is silo-only since flat retirement
+  // (#869) — and a migration whose whole job is to read the flat tree cannot
+  // depend on a reader that no longer looks there.
+  const base = (await listWikiPages()).filter((p) => !SKIP_SLUGS.has(p.slug));
+  const pages = await Promise.all(
+    base.map(async (entry): Promise<IndexEntry> => {
+      try {
+        const raw = await storage.readFile(wikiRelPath(`${entry.slug}.md`));
+        return enrichEntry(entry, parseFrontmatter(raw).data);
+      } catch (e) {
+        // No flat copy (already migrated, or genuinely absent) — keep the base
+        // entry so the page still lands in a silo rather than vanishing.
+        if (!isEnoent(e)) {
+          logger.warn("migrate", `flat read failed for "${entry.slug}"`, e);
+        }
+        return entry;
+      }
+    }),
+  );
 
   const tenants: Record<string, number> = {};
   const byTenant = new Map<string, IndexEntry[]>();
@@ -99,6 +122,21 @@ export async function migrateToTenants(
         errors.push(`index ${tenant}: ${String(e)}`);
       }
     }
+    // Seed the page index from what this run just computed, BEFORE anything
+    // reads a page back. Reads resolve a page's silo from its index entry's
+    // owner, and owner lives inside the page — so a rebuild that scans pages to
+    // discover owners cannot bootstrap itself after a move. The migration is
+    // the one place that already knows every page's tenant, so it writes the
+    // index rather than asking for one to be derived.
+    try {
+      const map: Record<string, IndexEntry> = {};
+      for (const page of pages) map[page.slug] = page;
+      await storage.putIndex("pages", map);
+    } catch (e) {
+      errors.push(`page-index: ${String(e)}`);
+      logger.warn("migrate", "page-index seed failed", e);
+    }
+
     // Derived commons index + the old→new redirect map.
     try {
       commonsCount = await rebuildCommonsIndex();

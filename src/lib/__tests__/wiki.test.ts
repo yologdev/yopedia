@@ -30,6 +30,7 @@ import {
   Frontmatter,
 } from "../wiki";
 import { _resetStorage } from "../storage";
+import { writeInfraFixture } from "./helpers/wiki-fixtures";
 import type { IndexEntry } from "../types";
 
 let tmpDir: string;
@@ -94,7 +95,7 @@ describe("writeWikiPage + readWikiPage roundtrip", () => {
     expect(page!.title).toBe("Test Page");
     expect(page!.content).toBe(content);
     expect(page!.path).toBe(
-      path.join(tmpDir, "wiki", "test-page.md"),
+      path.join(tmpDir, "tenants", "yopedia", "wiki", "test-page.md"),
     );
   });
 
@@ -1650,8 +1651,8 @@ describe("findBacklinks", () => {
   it("excludes index.md and log.md", async () => {
     await writeWikiPage("target", "# Target\n\nContent here.");
     // Simulate index and log containing a link to target
-    await writeWikiPage("index", "# Index\n\n- [Target](target.md) — desc");
-    await writeWikiPage("log", "# Log\n\n- Ingested [Target](target.md)");
+    await writeInfraFixture("index.md", "# Index\n\n- [Target](target.md) — desc");
+    await writeInfraFixture("log.md", "# Log\n\n- Ingested [Target](target.md)");
     await updateIndex([
       { slug: "target", title: "Target", summary: "Target" },
       { slug: "index", title: "Index", summary: "Index page" },
@@ -1785,8 +1786,8 @@ describe("searchWikiContent", () => {
   });
 
   it("skips index.md and log.md", async () => {
-    await writeWikiPage("index", "# Index\n\nSome index content with special keyword.");
-    await writeWikiPage("log", "# Log\n\nSome log content with special keyword.");
+    await writeInfraFixture("index.md", "# Index\n\nSome index content with special keyword.");
+    await writeInfraFixture("log.md", "# Log\n\nSome log content with special keyword.");
     await writeWikiPage("real-page", "# Real Page\n\nThis has the special keyword too.");
     await updateIndex([{ title: "Real Page", slug: "real-page", summary: "s" }]);
 
@@ -1955,7 +1956,7 @@ describe("page cache", () => {
     expect(first!.content).toBe("# NC\n\nOriginal.");
 
     // Modify file directly
-    const filePath = path.join(process.env.WIKI_DIR!, "no-cache.md");
+    const filePath = path.join(tmpDir, "tenants", "yopedia", "wiki", "no-cache.md");
     await fs.writeFile(filePath, "# NC\n\nModified.", "utf-8");
 
     // Read again — should see the modified content (no caching)
@@ -2137,42 +2138,34 @@ describe("silo-primary reads", () => {
     );
   });
 
-  it("readWikiPage falls back to flat when silo file is missing", async () => {
+  it("readWikiPage returns null when the silo file is missing (flat retired)", async () => {
     const storage = (await import("../storage")).getStorage();
+    // A leftover flat file is NOT a page any more — nothing reads it.
     await storage.writeFile(
       `wiki/flat-only.md`,
       "# Flat Only\n\nStill on flat.",
     );
-    // Seed page index — silo path will 404
     await storage.putIndex("pages", {
       "flat-only": { slug: "flat-only", title: "Flat Only", summary: "s", owner: "bob" },
     });
 
-    const page = await readWikiPage("flat-only");
-    expect(page).not.toBeNull();
-    expect(page!.title).toBe("Flat Only");
-    expect(page!.content).toContain("Still on flat.");
-    // path must reflect the flat location since silo was missing
-    expect(page!.path).toBe(
-      path.join(tmpDir, "wiki", "flat-only.md"),
-    );
+    expect(await readWikiPage("flat-only")).toBeNull();
   });
 
-  it("readWikiPage reads from flat when page-index is absent", async () => {
-    // No page index seeded — getPageIndex() returns null
+  it("readWikiPage falls back to the DEFAULT_TENANT silo when page-index is absent", async () => {
+    // getPageIndex() returns null → tenantForOwner(undefined) → DEFAULT_TENANT.
     const storage = (await import("../storage")).getStorage();
     await storage.writeFile(
-      `wiki/no-index.md`,
-      "# No Index\n\nDirect flat read.",
+      `tenants/yopedia/wiki/no-index.md`,
+      "# No Index\n\nDirect silo read.",
     );
 
     const page = await readWikiPage("no-index");
     expect(page).not.toBeNull();
     expect(page!.title).toBe("No Index");
-    expect(page!.content).toContain("Direct flat read.");
-    // path must reflect the flat location since no page-index existed
+    expect(page!.content).toContain("Direct silo read.");
     expect(page!.path).toBe(
-      path.join(tmpDir, "wiki", "no-index.md"),
+      path.join(tmpDir, "tenants", "yopedia", "wiki", "no-index.md"),
     );
   });
 
@@ -2190,7 +2183,7 @@ describe("silo-primary reads", () => {
     expect(exists).toBe(true);
   });
 
-  it("wikiPageExists falls back to flat when silo missing", async () => {
+  it("wikiPageExists returns false when the silo file is missing (flat retired)", async () => {
     const storage = (await import("../storage")).getStorage();
     await storage.putIndex("pages", {
       "exists-flat": { slug: "exists-flat", title: "E", summary: "e", owner: "dave" },
@@ -2201,7 +2194,7 @@ describe("silo-primary reads", () => {
     );
 
     const exists = await (await import("../wiki")).wikiPageExists("exists-flat");
-    expect(exists).toBe(true);
+    expect(exists).toBe(false);
   });
 });
 
@@ -2228,13 +2221,53 @@ describe("writeWikiPage with tenant parameter", () => {
     expect(flatExists).toBe(false);
   });
 
-  it("writes to flat path when tenant is omitted (backward compat)", async () => {
+  it("writes a NEW page to the DEFAULT_TENANT silo when tenant is omitted", async () => {
     await ensureDirectories();
     await writeWikiPage("flat-write", "# Flat\n\nContent.");
 
     const storage = (await import("../storage")).getStorage();
-    const content = await storage.readFile("wiki/flat-write.md");
+    const content = await storage.readFile("tenants/yopedia/wiki/flat-write.md");
     expect(content).toBe("# Flat\n\nContent.");
+    // and nothing is left at the retired flat path
+    expect(await storage.fileExists("wiki/flat-write.md")).toBe(false);
+  });
+
+  it("updates a page IN PLACE when tenant is omitted (never relocates it)", async () => {
+    await ensureDirectories();
+    const storage = (await import("../storage")).getStorage();
+    await storage.putIndex("pages", {
+      "owned-page": { slug: "owned-page", title: "Owned", summary: "s", owner: "alice" },
+    });
+    await storage.writeFile("tenants/alice/wiki/owned-page.md", "# V1\n\nFirst.");
+
+    // No tenant argument — this is a content edit, not an ownership change.
+    await writeWikiPage("owned-page", "# V2\n\nSecond.");
+
+    expect(await storage.readFile("tenants/alice/wiki/owned-page.md")).toContain("Second.");
+    expect(await storage.fileExists("tenants/yopedia/wiki/owned-page.md")).toBe(false);
+  });
+
+  it("MOVES a page when an explicit tenant differs from its current one", async () => {
+    await ensureDirectories();
+    const storage = (await import("../storage")).getStorage();
+    await storage.putIndex("pages", {
+      "moving-page": { slug: "moving-page", title: "Moving", summary: "s", owner: "alice" },
+    });
+    await storage.writeFile("tenants/alice/wiki/moving-page.md", "# V1\n\nFirst.");
+
+    // Explicit tenant = the caller asserting the new owner.
+    await writeWikiPage("moving-page", "# V2\n\nSecond.", "yoyo", "move", "bob");
+
+    expect(await storage.readFile("tenants/bob/wiki/moving-page.md")).toContain("Second.");
+    expect(await storage.fileExists("tenants/alice/wiki/moving-page.md")).toBe(false);
+
+    // History follows the page: the pre-move content is snapshotted, not lost.
+    const revs = await storage.listFiles("tenants/bob/wiki/.revisions/moving-page");
+    const mds = revs.filter((e: { name: string }) => e.name.endsWith(".md"));
+    expect(mds.length).toBe(1);
+    expect(await storage.readFile(
+      `tenants/bob/wiki/.revisions/moving-page/${mds[0].name}`,
+    )).toContain("First.");
   });
 
   it("saves revision to tenant silo when overwriting with tenant", async () => {

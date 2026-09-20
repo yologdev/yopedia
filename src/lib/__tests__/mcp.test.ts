@@ -54,6 +54,7 @@ import {
 import { vaultIdFor, listVaults, getVault, createVault } from "../vault";
 import { readWikiPageWithFrontmatter } from "../wiki";
 import { _resetStorage, getStorage } from "../storage";
+import { writePageFixture, siloPagePath } from "./helpers/wiki-fixtures";
 import { _resetConfigCache } from "../config";
 import { parseFrontmatter } from "../frontmatter";
 import { registerAgent } from "../agents";
@@ -164,12 +165,14 @@ afterEach(async () => {
 // Helper — write wiki pages and index
 // ---------------------------------------------------------------------------
 
-async function writeTestPage(slug: string, content: string): Promise<void> {
-  await fs.writeFile(
-    path.join(tmpDir, "wiki", `${slug}.md`),
-    content,
-    "utf-8",
-  );
+async function writeTestPage(
+  slug: string,
+  content: string,
+  owner?: string,
+): Promise<void> {
+  // Silo-only (#869): write where readWikiPage resolves, deriving the tenant
+  // from `owner` exactly as the read path does.
+  await writePageFixture(slug, content, owner);
 }
 
 async function writeIndex(
@@ -462,7 +465,7 @@ describe("MCP write tools", () => {
       expect(result.created).toBe(true);
 
       // Verify file exists on disk with frontmatter
-      const filePath = path.join(tmpDir, "wiki", "test-create.md");
+      const filePath = siloPagePath("test-create");
       const fileContent = await fs.readFile(filePath, "utf-8");
       expect(fileContent).toContain("---");
       expect(fileContent).toContain("title: Test");
@@ -476,7 +479,7 @@ describe("MCP write tools", () => {
         content: "# Schema Test\n\nBody.",
       });
 
-      const filePath = path.join(tmpDir, "wiki", "schema-check.md");
+      const filePath = siloPagePath("schema-check");
       const fileContent = await fs.readFile(filePath, "utf-8");
       const { data: frontmatter } = parseFrontmatter(fileContent);
 
@@ -536,7 +539,7 @@ describe("MCP write tools", () => {
         tags: ["science", "ai"],
       });
 
-      const filePath = path.join(tmpDir, "wiki", "tagged-page.md");
+      const filePath = siloPagePath("tagged-page");
       const fileContent = await fs.readFile(filePath, "utf-8");
       const { data: frontmatter } = parseFrontmatter(fileContent);
       expect(frontmatter.tags).toEqual(["science", "ai"]);
@@ -548,7 +551,7 @@ describe("MCP write tools", () => {
         content: "# No Tags\n\nBody.",
       });
 
-      const filePath = path.join(tmpDir, "wiki", "no-tags-page.md");
+      const filePath = siloPagePath("no-tags-page");
       const fileContent = await fs.readFile(filePath, "utf-8");
       const { data: frontmatter } = parseFrontmatter(fileContent);
       expect(frontmatter.tags).toEqual([]);
@@ -584,7 +587,7 @@ describe("MCP write tools", () => {
       expect(result.created).toBe(true);
       expect(result.title).toBe("Created Page");
 
-      const filePath = path.join(tmpDir, "wiki", "double-fm-create.md");
+      const filePath = siloPagePath("double-fm-create");
       const fileContent = await fs.readFile(filePath, "utf-8");
 
       // Count frontmatter delimiters — exactly one block (opening + closing = 2)
@@ -619,7 +622,7 @@ describe("MCP write tools", () => {
       expect(result.updated).toBe(true);
 
       // Verify file on disk has new content
-      const filePath = path.join(tmpDir, "wiki", "update-me.md");
+      const filePath = siloPagePath("update-me");
       const fileContent = await fs.readFile(filePath, "utf-8");
       expect(fileContent).toContain("# Updated");
       expect(fileContent).toContain("New body content.");
@@ -649,7 +652,7 @@ describe("MCP write tools", () => {
       expect(result.updated).toBe(true);
 
       // Verify original frontmatter fields preserved
-      const filePath = path.join(tmpDir, "wiki", "preserve-fm.md");
+      const filePath = siloPagePath("preserve-fm");
       const fileContent = await fs.readFile(filePath, "utf-8");
       expect(fileContent).toContain("tags: [science, ai]");
       expect(fileContent).toContain("confidence: 0.8");
@@ -719,7 +722,7 @@ describe("MCP write tools", () => {
 
       expect(result.updated).toBe(true);
 
-      const filePath = path.join(tmpDir, "wiki", "double-fm-update.md");
+      const filePath = siloPagePath("double-fm-update");
       const fileContent = await fs.readFile(filePath, "utf-8");
 
       // Count frontmatter delimiters — exactly one block (opening + closing = 2)
@@ -764,7 +767,7 @@ describe("MCP cross-referencing", () => {
 
     // The existing page should now contain a "See also" link to new-topic
     const existingContent = await fs.readFile(
-      path.join(tmpDir, "wiki", "existing-topic.md"),
+      siloPagePath("existing-topic"),
       "utf-8",
     );
     expect(existingContent).toContain("See also:");
@@ -799,7 +802,7 @@ describe("MCP cross-referencing", () => {
 
     // The related page should now contain a "See also" link to page-to-update
     const relatedContent = await fs.readFile(
-      path.join(tmpDir, "wiki", "related-page.md"),
+      siloPagePath("related-page"),
       "utf-8",
     );
     expect(relatedContent).toContain("See also:");
@@ -1042,7 +1045,7 @@ describe("seed_agent tool", () => {
 
     // Verify wiki pages were created
     const identityPage = await fs.readFile(
-      path.join(tmpDir, "wiki", "new-agent-identity.md"),
+      siloPagePath("new-agent-identity"),
       "utf-8",
     );
     expect(identityPage).toContain("I am a new agent.");
@@ -1109,7 +1112,7 @@ describe("seed_agent tool", () => {
 
     // Wiki page should have updated content
     const pageContent = await fs.readFile(
-      path.join(tmpDir, "wiki", "idempotent-identity.md"),
+      siloPagePath("idempotent-identity"),
       "utf-8",
     );
     expect(pageContent).toContain("Version 2 content.");
@@ -1137,7 +1140,7 @@ describe("update_metadata", () => {
     expect(result.updated).toBe(true);
 
     // Verify frontmatter was updated
-    const filePath = path.join(tmpDir, "wiki", "meta-test.md");
+    const filePath = siloPagePath("meta-test");
     const fileContent = await fs.readFile(filePath, "utf-8");
     expect(fileContent).toContain("confidence: 0.9");
     expect(fileContent).toContain("ai");
@@ -1182,7 +1185,7 @@ describe("update_metadata", () => {
     expect(result.updated).toBe(true);
 
     const fileContent = await fs.readFile(
-      path.join(tmpDir, "wiki", "mcp-private.md"),
+      siloPagePath("mcp-private", "alice"),
       "utf-8",
     );
     expect(fileContent).toContain("confidence: 0.95");
@@ -1240,7 +1243,7 @@ describe("update_metadata", () => {
 
     expect(result.updated).toBe(true);
 
-    const filePath = path.join(tmpDir, "wiki", "meta-unknown.md");
+    const filePath = siloPagePath("meta-unknown");
     const fileContent = await fs.readFile(filePath, "utf-8");
     expect(fileContent).toContain("confidence: 0.7");
     expect(fileContent).not.toContain("random_field");
@@ -1261,7 +1264,7 @@ describe("update_metadata", () => {
 
     expect(result.updated).toBe(true);
 
-    const filePath = path.join(tmpDir, "wiki", "meta-contrib.md");
+    const filePath = siloPagePath("meta-contrib");
     const fileContent = await fs.readFile(filePath, "utf-8");
     const parsed = parseFrontmatter(fileContent);
     const contributors = parsed.data.contributors as string[];
@@ -1279,7 +1282,7 @@ describe("update_metadata", () => {
       metadata: { disputed: true },
     });
 
-    const filePath = path.join(tmpDir, "wiki", "meta-updated.md");
+    const filePath = siloPagePath("meta-updated");
     const fileContent = await fs.readFile(filePath, "utf-8");
     const today = new Date().toISOString().slice(0, 10);
     expect(fileContent).toContain(`updated: ${today}`);
@@ -1304,7 +1307,7 @@ describe("update_metadata", () => {
       },
     });
 
-    const filePath = path.join(tmpDir, "wiki", "meta-multi.md");
+    const filePath = siloPagePath("meta-multi");
     const fileContent = await fs.readFile(filePath, "utf-8");
     expect(fileContent).toContain("confidence: 0.6");
     expect(fileContent).toContain("disputed: true");
@@ -3487,7 +3490,7 @@ describe("handleCreatePage author attribution", () => {
     expect(result.created).toBe(true);
 
     const raw = await fs.readFile(
-      path.join(tmpDir, "wiki", "test-page.md"),
+      siloPagePath("test-page"),
       "utf-8",
     );
     const parsed = parseFrontmatter(raw);
@@ -3503,7 +3506,7 @@ describe("handleCreatePage author attribution", () => {
     expect(result.created).toBe(true);
 
     const raw = await fs.readFile(
-      path.join(tmpDir, "wiki", "default-author.md"),
+      siloPagePath("default-author"),
       "utf-8",
     );
     const parsed = parseFrontmatter(raw);
@@ -3532,7 +3535,7 @@ describe("handleUpdatePage contributor attribution", () => {
     });
 
     const raw = await fs.readFile(
-      path.join(tmpDir, "wiki", "existing-page.md"),
+      siloPagePath("existing-page"),
       "utf-8",
     );
     const parsed = parseFrontmatter(raw);
@@ -3555,7 +3558,7 @@ describe("handleUpdatePage contributor attribution", () => {
     });
 
     const raw = await fs.readFile(
-      path.join(tmpDir, "wiki", "dup-page.md"),
+      siloPagePath("dup-page"),
       "utf-8",
     );
     const parsed = parseFrontmatter(raw);
@@ -3578,7 +3581,7 @@ describe("handleUpdatePage contributor attribution", () => {
     });
 
     const raw = await fs.readFile(
-      path.join(tmpDir, "wiki", "no-author-page.md"),
+      siloPagePath("no-author-page"),
       "utf-8",
     );
     const parsed = parseFrontmatter(raw);

@@ -338,10 +338,9 @@ describe("scanForMaintenance", () => {
       logOp: "ingest",
       crossRefSource: null,
     });
-    await getStorage().putIndex("pages", {
-      "artificial-intelligence": { slug: "artificial-intelligence", title: "Artificial Intelligence", summary: "s" },
-      "machine-learning": { slug: "machine-learning", title: "Machine Learning", summary: "s" },
-    });
+    // No manual page-index seeding here: writeWikiPageWithSideEffects now seeds
+    // it on write, and an override without `owner` would point reads at the
+    // wrong silo.
     const tasks = await scanForMaintenance();
     expect(tasks).toContainEqual({
       kind: "maintain",

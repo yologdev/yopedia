@@ -12,7 +12,7 @@ import {
   findRelatedPages,
   updateRelatedPages,
   appendToLog,
-  wikiRelPath,
+  siloPathForSlug,
   tenantForOwner,
   tenantWikiRelPath,
   isArtifactType,
@@ -231,12 +231,8 @@ async function runPageLifecycleOp(
     } catch {
       // No prior page (new) or unreadable → treat as no previous links.
     }
-    // Silo-primary: write to tenants/<tenant>/wiki/<slug>.md
+    // Silo is the sole write target (#869): tenants/<tenant>/wiki/<slug>.md
     await writeWikiPage(slug, op.content, op.author, undefined, writeTenant);
-    // Also write flat copy (transition — removable after #869) so readWikiPage
-    // can find the page without a page index. writeWikiPage without tenant
-    // targets the flat path.
-    await writeWikiPage(slug, op.content, op.author);
   } else {
     try {
       const pre = await readWikiPageWithFrontmatter(slug);
@@ -252,22 +248,23 @@ async function runPageLifecycleOp(
     } catch {
       // Owner/contributors unknown → falls back to the default tenant in step 3c.
     }
-    // Delete from silo (primary target).
+    // Delete the page from where READS resolve it (the page index), not from a
+    // path re-derived from frontmatter. The two can disagree — an ownership
+    // change updates frontmatter before the index catches up — and deleting the
+    // wrong one leaves the page live. The frontmatter-derived path is cleared
+    // too when it differs, so a drifted copy can't outlive the delete.
     const deleteTenant = tenantForOwner(deletedOwner);
-    try {
-      await getStorage().deleteFile(tenantWikiRelPath(deleteTenant, `${slug}.md`));
-    } catch (err: unknown) {
-      if (!(err instanceof Error && 'code' in err && (err as NodeJS.ErrnoException).code === 'ENOENT')) {
-        throw err;
-      }
-    }
-    // Also delete flat copy (transition cleanup — removable after #869).
-    try {
-      await getStorage().deleteFile(wikiRelPath(`${slug}.md`));
-    } catch (err: unknown) {
-      // Flat copy may already be gone — swallow ENOENT.
-      if (!(err instanceof Error && 'code' in err && (err as NodeJS.ErrnoException).code === 'ENOENT')) {
-        throw err;
+    const targets = new Set([
+      await siloPathForSlug(slug),
+      tenantWikiRelPath(deleteTenant, `${slug}.md`),
+    ]);
+    for (const target of targets) {
+      try {
+        await getStorage().deleteFile(target);
+      } catch (err: unknown) {
+        if (!(err instanceof Error && 'code' in err && (err as NodeJS.ErrnoException).code === 'ENOENT')) {
+          throw err;
+        }
       }
     }
   }
@@ -633,10 +630,8 @@ async function runPageLifecycleOp(
         } catch {
           stripTenant = tenantForOwner(undefined);
         }
-        // Silo-primary write for the stripped page.
+        // Silo write for the stripped page.
         await writeWikiPage(entry.slug, updated, "system", "backlink strip", stripTenant);
-        // Also write flat copy (transition — removable after #869).
-        await writeWikiPage(entry.slug, updated, "system", "backlink strip");
         strippedBacklinksFrom.push(entry.slug);
       }
     });

@@ -41,11 +41,18 @@ export async function getPageIndex(): Promise<PageMetaIndex | null> {
   }
 }
 
-/** Upsert one page's enriched entry. NO-OP until the index is seeded. */
+/**
+ * Upsert one page's enriched entry, seeding the index on first write.
+ *
+ * This used to no-op until a rebuild seeded the map. Once reads are silo-only
+ * (#889) that gap is no longer survivable: the read path derives a page's
+ * tenant from its index entry, so a page written before the first rebuild
+ * would resolve to {@link DEFAULT_TENANT} and read as missing. Seeding here
+ * keeps write and read agreeing from the very first page.
+ */
 export async function syncPageIndexForPage(entry: IndexEntry): Promise<void> {
   await withFileLock(PAGE_INDEX_LOCK, async () => {
-    const idx = await getPageIndex();
-    if (idx === null) return; // not seeded — daily rebuild will seed it
+    const idx = (await getPageIndex()) ?? {};
     idx[entry.slug] = entry;
     await getStorage().putIndex(PAGE_INDEX_KEY, idx);
   });

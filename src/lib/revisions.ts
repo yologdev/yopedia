@@ -62,6 +62,42 @@ function tenantRevisionsRelPath(tenant: string, ...segments: string[]): string {
   return tenantWikiRelPath(tenant, [REVISIONS_DIR_NAME, ...segments].join("/"));
 }
 
+/**
+ * The revision roots for a slug, in read precedence order.
+ *
+ * Flat retirement (#869) moved PAGES into tenant silos, but the one-shot
+ * migration only copied pages and raw sources — the `.revisions/` archive was
+ * never moved. So a page edited before revisions became tenant-aware has its
+ * history under the flat root, and everything written since lives in its silo.
+ * Reads therefore consult BOTH: silo first (authoritative for anything recent),
+ * then the un-migrated flat archive.
+ *
+ * This is deliberately NOT the flat fallback that flat retirement removes from
+ * `readWikiPage`. That one existed because writes went to two places; this one
+ * exists because historical data still sits in one place. It can go away once a
+ * migration moves `.revisions/` into the silos.
+ *
+ * `tenant` short-circuits the lookup for callers that already know it (the
+ * write path). Otherwise the tenant is resolved from the page index, the same
+ * way `readWikiPage` resolves a page's location.
+ */
+async function revisionRootsFor(
+  slug: string,
+  tenant?: string,
+): Promise<((...segments: string[]) => string)[]> {
+  let effective = tenant;
+  if (effective === undefined) {
+    const { getPageIndex } = await import("./page-index");
+    const { ownerToTenant } = await import("./links");
+    const idx = await getPageIndex();
+    effective = ownerToTenant(idx?.[slug]?.owner);
+  }
+  return [
+    (...segments: string[]) => tenantRevisionsRelPath(effective, ...segments),
+    (...segments: string[]) => revisionsRelPath(...segments),
+  ];
+}
+
 // ---------------------------------------------------------------------------
 // Monotonic timestamp — ensures unique filenames even when multiple
 // revisions are saved within the same millisecond.
@@ -121,25 +157,81 @@ export async function saveRevision(
 }
 
 /**
+ * Move a page's revision archive between tenant silos.
+ *
+ * History belongs to the page, so when an ownership change relocates the page
+ * its revisions have to follow — otherwise the archive is orphaned under the
+ * previous owner where nothing resolves it. Best-effort: a failure here leaves
+ * history behind but never blocks the write.
+ */
+export async function moveRevisions(
+  slug: string,
+  fromTenant: string,
+  toTenant: string,
+): Promise<void> {
+  if (fromTenant === toTenant) return;
+  validateSlug(slug);
+  const storage = getStorage();
+  const fromDir = tenantRevisionsRelPath(fromTenant, slug);
+  let entries: { name: string; isDirectory: boolean }[];
+  try {
+    entries = await storage.listFiles(fromDir);
+  } catch (err) {
+    if (!isEnoent(err)) {
+      logger.warn("revisions", `could not list revisions of "${slug}" for move:`, err);
+    }
+    return; // nothing to move
+  }
+  for (const entry of entries) {
+    if (entry.isDirectory) continue;
+    try {
+      const body = await storage.readFile(tenantRevisionsRelPath(fromTenant, slug, entry.name));
+      await storage.writeFile(tenantRevisionsRelPath(toTenant, slug, entry.name), body);
+      await storage.deleteFile(tenantRevisionsRelPath(fromTenant, slug, entry.name));
+    } catch (err) {
+      logger.warn(
+        "revisions",
+        `could not move revision "${slug}/${entry.name}" to "${toTenant}":`,
+        err,
+      );
+    }
+  }
+}
+
+/**
  * List all revisions for a page, newest first.
  *
  * Returns an empty array when no revisions exist (new page or never edited).
  */
-export async function listRevisions(slug: string): Promise<Revision[]> {
+export async function listRevisions(slug: string, tenant?: string): Promise<Revision[]> {
   validateSlug(slug);
   const storage = getStorage();
-  const dirPath = revisionsRelPath(slug);
+  const roots = await revisionRootsFor(slug, tenant);
 
-  let entries: { name: string; isDirectory: boolean }[];
-  try {
-    entries = await storage.listFiles(dirPath);
-  } catch (err) {
-    // Directory doesn't exist → no revisions.
-    if (!isEnoent(err)) {
-      logger.warn("revisions", `unexpected error reading revision dir for "${slug}":`, err);
+  // Union the silo and the un-migrated flat archive: a page edited either side
+  // of the tenant switch has history in both, and the UI must show one
+  // timeline. The first root to yield a timestamp wins, so a revision copied
+  // into the silo shadows its flat original instead of double-listing.
+  const seen = new Set<string>();
+  const entries: { name: string; isDirectory: boolean; at: (...s: string[]) => string }[] = [];
+  for (const at of roots) {
+    let found: { name: string; isDirectory: boolean }[];
+    try {
+      found = await storage.listFiles(at(slug));
+    } catch (err) {
+      // Directory doesn't exist → nothing from this root.
+      if (!isEnoent(err)) {
+        logger.warn("revisions", `unexpected error reading revision dir for "${slug}":`, err);
+      }
+      continue;
     }
-    return [];
+    for (const e of found) {
+      if (seen.has(e.name)) continue;
+      seen.add(e.name);
+      entries.push({ ...e, at });
+    }
   }
+  if (entries.length === 0) return [];
 
   // Read each revision's stat + optional meta sidecar CONCURRENTLY. The old
   // serial loop did 2 sequential storage round-trips (stat, then meta) per
@@ -156,13 +248,13 @@ export async function listRevisions(slug: string): Promise<Revision[]> {
       if (Number.isNaN(timestamp) || timestamp <= 0) return null;
 
       try {
-        const stat = await storage.stat(revisionsRelPath(slug, entry.name));
+        const stat = await storage.stat(entry.at(slug, entry.name));
 
         // Read the optional author/reason sidecar.
         let author: string | undefined;
         let reason: string | undefined;
         try {
-          const metaRaw = await storage.readFile(revisionsRelPath(slug, `${stem}.meta.json`));
+          const metaRaw = await storage.readFile(entry.at(slug, `${stem}.meta.json`));
           const meta = JSON.parse(metaRaw) as { author?: string; reason?: string };
           if (typeof meta.author === "string") {
             author = meta.author;
@@ -224,20 +316,38 @@ export interface RevisionAuthor {
 export async function listRevisionAuthors(
   slug: string,
   max: number,
+  tenant?: string,
 ): Promise<RevisionAuthor[]> {
   validateSlug(slug);
   const storage = getStorage();
-  const dirPath = revisionsRelPath(slug);
+  const roots = await revisionRootsFor(slug, tenant);
 
-  let entries: { name: string; isDirectory: boolean }[];
-  try {
-    entries = await storage.listFiles(dirPath);
-  } catch (err) {
-    if (!isEnoent(err)) {
-      logger.warn("revisions", `unexpected error reading revision dir for "${slug}":`, err);
+  // Same silo + flat-archive union as listRevisions; `metaAt` remembers which
+  // root a sidecar came from so the attribution read hits the right one.
+  const metaAt = new Map<number, (...s: string[]) => string>();
+  const entries: { name: string; isDirectory: boolean }[] = [];
+  const seen = new Set<string>();
+  for (const at of roots) {
+    let found: { name: string; isDirectory: boolean }[];
+    try {
+      found = await storage.listFiles(at(slug));
+    } catch (err) {
+      if (!isEnoent(err)) {
+        logger.warn("revisions", `unexpected error reading revision dir for "${slug}":`, err);
+      }
+      continue;
     }
-    return [];
+    for (const e of found) {
+      if (seen.has(e.name)) continue;
+      seen.add(e.name);
+      entries.push(e);
+      if (!e.isDirectory && e.name.endsWith(".meta.json")) {
+        const ts = Number(e.name.slice(0, -".meta.json".length));
+        if (Number.isFinite(ts) && ts > 0) metaAt.set(ts, at);
+      }
+    }
   }
+  if (entries.length === 0) return [];
 
   // One `listFiles` gives us BOTH the revisions (`<ts>.md`) and which of them
   // carry an attribution sidecar (`<ts>.meta.json`). Build the sidecar set here
@@ -264,7 +374,8 @@ export async function listRevisionAuthors(
       // No sidecar in the listing → unattributed; a valid event, but no read.
       if (!sidecars.has(timestamp)) return base;
       try {
-        const raw = await storage.readFile(revisionsRelPath(slug, `${timestamp}.meta.json`));
+        const at = metaAt.get(timestamp) ?? roots[0];
+        const raw = await storage.readFile(at(slug, `${timestamp}.meta.json`));
         const meta = JSON.parse(raw) as { author?: string; reason?: string };
         if (typeof meta.author === "string") base.author = meta.author;
         if (typeof meta.reason === "string") base.reason = meta.reason;
@@ -293,16 +404,21 @@ export async function listRevisionAuthors(
 export async function readRevision(
   slug: string,
   timestamp: number,
+  tenant?: string,
 ): Promise<string | null> {
   validateSlug(slug);
-  try {
-    return await getStorage().readFile(revisionsRelPath(slug, `${timestamp}.md`));
-  } catch (err) {
-    if (!isEnoent(err)) {
-      logger.warn("revisions", `unexpected error reading revision "${slug}@${timestamp}":`, err);
+  for (const at of await revisionRootsFor(slug, tenant)) {
+    try {
+      return await getStorage().readFile(at(slug, `${timestamp}.md`));
+    } catch (err) {
+      if (!isEnoent(err)) {
+        logger.warn("revisions", `unexpected error reading revision "${slug}@${timestamp}":`, err);
+        return null;
+      }
+      // Not in this root — try the next (silo, then the flat archive).
     }
-    return null;
   }
+  return null;
 }
 
 /** Metadata from a revision's `.meta.json` sidecar file. */
@@ -320,21 +436,32 @@ export interface RevisionMeta {
 export async function readRevisionMeta(
   slug: string,
   timestamp: number,
+  tenant?: string,
 ): Promise<RevisionMeta | null> {
   validateSlug(slug);
-  try {
-    const raw = await getStorage().readFile(revisionsRelPath(slug, `${timestamp}.meta.json`));
-    const meta = JSON.parse(raw) as Record<string, unknown>;
-    const result: RevisionMeta = {};
-    if (typeof meta.author === "string") result.author = meta.author;
-    if (typeof meta.reason === "string") result.reason = meta.reason;
-    return result;
-  } catch (err) {
-    if (!isEnoent(err)) {
-      logger.warn("revisions", `unexpected error reading revision meta "${slug}@${timestamp}":`, err);
+  for (const at of await revisionRootsFor(slug, tenant)) {
+    let raw: string;
+    try {
+      raw = await getStorage().readFile(at(slug, `${timestamp}.meta.json`));
+    } catch (err) {
+      if (!isEnoent(err)) {
+        logger.warn("revisions", `unexpected error reading revision meta "${slug}@${timestamp}":`, err);
+        return null;
+      }
+      continue; // no sidecar in this root — try the flat archive
     }
-    return null;
+    try {
+      const meta = JSON.parse(raw) as Record<string, unknown>;
+      const result: RevisionMeta = {};
+      if (typeof meta.author === "string") result.author = meta.author;
+      if (typeof meta.reason === "string") result.reason = meta.reason;
+      return result;
+    } catch (err) {
+      logger.warn("revisions", `malformed revision meta "${slug}@${timestamp}":`, err);
+      return null;
+    }
   }
+  return null;
 }
 
 /**
@@ -343,14 +470,17 @@ export async function readRevisionMeta(
  * Called when a page is permanently deleted so we don't leave orphaned
  * revision data on disk.
  */
-export async function deleteRevisions(slug: string): Promise<void> {
+export async function deleteRevisions(slug: string, tenant?: string): Promise<void> {
   validateSlug(slug);
-  try {
-    await getStorage().deleteDirectory(revisionsRelPath(slug));
-  } catch (err) {
-    // Already gone — nothing to do.
-    if (!isEnoent(err)) {
-      logger.warn("revisions", `unexpected error deleting revisions for "${slug}":`, err);
+  // Clear BOTH roots — a page deleted today may still have flat-archive history.
+  for (const at of await revisionRootsFor(slug, tenant)) {
+    try {
+      await getStorage().deleteDirectory(at(slug));
+    } catch (err) {
+      // Already gone — nothing to do.
+      if (!isEnoent(err)) {
+        logger.warn("revisions", `unexpected error deleting revisions for "${slug}":`, err);
+      }
     }
   }
 }

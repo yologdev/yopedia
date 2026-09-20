@@ -64,9 +64,20 @@ describe("page-index", () => {
     expect(await getPageIndex()).toBeNull();
   });
 
-  it("syncPageIndexForPage / remove NO-OP until the index is seeded", async () => {
+  it("syncPageIndexForPage seeds the index when it is absent", async () => {
+    // Silo-only reads derive a page's tenant from its index entry, so the very
+    // first write has to leave an entry behind — not wait for a rebuild.
     await createPage("a", "owner: alice");
     await syncPageIndexForPage({ slug: "a", title: "A", summary: "s", owner: "alice" });
+
+    const idx = await getPageIndex();
+    expect(idx).not.toBeNull();
+    expect(idx!.a).toEqual({ slug: "a", title: "A", summary: "s", owner: "alice" });
+  });
+
+  it("removePageIndexForSlug still NO-OPs when the index is absent", async () => {
+    // Removal must not fabricate an empty map — absent stays absent.
+    await createPage("a", "owner: alice");
     await removePageIndexForSlug("a");
     expect(await getPageIndex()).toBeNull();
   });

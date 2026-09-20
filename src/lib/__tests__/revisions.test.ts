@@ -12,6 +12,7 @@ import {
   getRevisionsDir,
 } from "../revisions";
 import { writeWikiPage, ensureDirectories } from "../wiki";
+import { siloPagePath } from "./helpers/wiki-fixtures";
 import { _resetStorage } from "../storage";
 
 let tmpDir: string;
@@ -258,10 +259,7 @@ describe("writeWikiPage integration", () => {
     expect(revContent).toBe(originalContent);
 
     // The current file should be v2.
-    const current = await fs.readFile(
-      path.join(process.env.WIKI_DIR!, "integrated.md"),
-      "utf-8",
-    );
+    const current = await fs.readFile(siloPagePath("integrated"), "utf-8");
     expect(current).toBe(updatedContent);
   });
 

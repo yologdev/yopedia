@@ -4,9 +4,10 @@ import os from "os";
 import path from "path";
 import { migrateToTenants, getRedirectMap } from "../migrate-to-tenants";
 import { getCommonsIndex } from "../commons";
-import { ensureDirectories, writeWikiPage, rawRelPath } from "../wiki";
+import { ensureDirectories, rawRelPath, wikiRelPath } from "../wiki";
 import { createThread } from "../talk";
 import { getStorage, _resetStorage } from "../storage";
+import { saveRevision } from "../revisions";
 
 let tmpDir: string;
 const saved: Record<string, string | undefined> = {};
@@ -31,7 +32,12 @@ afterEach(async () => {
 
 async function createPage(slug: string, frontmatter: string, title: string) {
   await ensureDirectories();
-  await writeWikiPage(slug, `---\n${frontmatter}\n---\n\n# ${title}\n\nBody of ${title}.`);
+  // migrateToTenants reads the FLAT tree — that is its whole job — so plant the
+  // source there directly. writeWikiPage now writes to a silo (#869).
+  await getStorage().writeFile(
+    wikiRelPath(`${slug}.md`),
+    `---\n${frontmatter}\n---\n\n# ${title}\n\nBody of ${title}.`,
+  );
   const indexPath = path.join(process.env.WIKI_DIR!, "index.md");
   let existing = "";
   try {
@@ -135,8 +141,14 @@ describe("migrateToTenants — live", () => {
 
   it("copies every per-page artifact (revisions, discuss, assets) into the silo", async () => {
     await createPage("doc", "owner: alice\nvisibility: public", "Doc");
-    // Second write snapshots the first as a revision.
-    await writeWikiPage("doc", "---\nowner: alice\nvisibility: public\n---\n\n# Doc\n\nv2.");
+    // Plant a FLAT revision (what a pre-migration edit left behind) plus the
+    // updated page. saveRevision without a tenant targets the flat archive,
+    // which is exactly the content this migration has to carry over.
+    await saveRevision("doc", "---\nowner: alice\nvisibility: public\n---\n\n# Doc\n\nv1.");
+    await getStorage().writeFile(
+      wikiRelPath("doc.md"),
+      "---\nowner: alice\nvisibility: public\n---\n\n# Doc\n\nv2.",
+    );
     // A discussion thread + a binary asset.
     await createThread("doc", "Re: Doc", "alice", "first comment");
     await getStorage().writeAsset(

@@ -164,10 +164,13 @@ export async function removeSiloForPage(
 /** Summary returned by {@link reconcileSilos}. */
 export interface ReconcileResult {
   total: number;
-  /** Pages whose silo copy was missing and freshly synced. */
+  /** Pages found under the wrong tenant and moved to the one their index
+   *  entry names — the repair that keeps a page reachable. */
   synced: number;
-  /** Pages whose silo copy existed but had stale content — re-synced. */
+  /** Pages present in the index but in no silo at all (also reported in
+   *  `errors`, since nothing can be done for them here). */
   stale: number;
+  /** Pages already in the right silo. */
   alreadyCurrent: number;
   /** Silo pages with no corresponding index entry — cleaned up. */
   removed: number;
@@ -178,13 +181,18 @@ export interface ReconcileResult {
 const SKIP = new Set(["index", "log"]);
 
 /**
- * Scan every page in the flat index, verify that its tenant silo copy exists,
- * and repair any that are missing. This closes the gap left by fail-soft silo
- * mirrors — a page whose mirror write failed silently will be re-synced here.
+ * Verify every indexed page sits in the silo its index entry points to, and
+ * repair the ones that don't.
  *
- * Designed to run at the END of {@link rebuildDerivedIndexes} (it reads from
- * flat, so all indexes should be fresh first) and is also available for the
- * admin migrate endpoint.
+ * The old forward pass copied flat → silo. Flat retirement (#869) made the silo
+ * the only write target, so there is no flat source left to copy from and that
+ * pass became dead code. What replaces it matters more: reads now DERIVE a
+ * page's location from its index entry's owner, so a page whose file sits under
+ * a different tenant than its entry claims is invisible — not corrupt, just
+ * unreachable. This pass finds those and relocates them.
+ *
+ * Runs at the END of {@link rebuildDerivedIndexes} (so the index it trusts is
+ * fresh) and is also available from the admin migrate endpoint.
  */
 export async function reconcileSilos(): Promise<ReconcileResult> {
   const { listWikiPages } = await import("./wiki");
@@ -199,27 +207,56 @@ export async function reconcileSilos(): Promise<ReconcileResult> {
     errors: [],
   };
 
+  // Tenant directories, listed once and reused by the misplaced-page search.
+  const tenantNames: string[] = [];
+  try {
+    for (const td of await listSafe("tenants")) {
+      if (td.isDirectory) tenantNames.push(td.name);
+    }
+  } catch (e) {
+    logger.warn("silo", "tenant listing failed:", e);
+  }
+
   for (const page of pages) {
     if (SKIP.has(page.slug)) continue;
     result.total++;
     const tenant = tenantForOwner(page.owner);
     try {
-      const flatPath = wikiRelPath(`${page.slug}.md`);
       const siloPath = tenantWikiRelPath(tenant, `${page.slug}.md`);
-      const exists = await storage.fileExists(siloPath);
-      if (!exists) {
-        await syncSiloForPage(page.slug, tenant);
-        result.synced++;
-      } else {
-        // Silo exists — compare content to detect staleness.
-        const flatContent = await storage.readFile(flatPath);
-        const siloContent = await storage.readFile(siloPath);
-        if (flatContent !== siloContent) {
-          await syncSiloForPage(page.slug, tenant);
-          result.stale++;
-        } else {
-          result.alreadyCurrent++;
+      if (await storage.fileExists(siloPath)) {
+        result.alreadyCurrent++;
+        continue;
+      }
+
+      // Not where the index says it should be. Look for it under another
+      // tenant — the signature of an ownership change whose move didn't
+      // complete — and put it back where readers will look.
+      let relocated = false;
+      for (const other of tenantNames) {
+        if (other === tenant) continue;
+        let fromPath: string;
+        try {
+          fromPath = tenantWikiRelPath(other, `${page.slug}.md`);
+        } catch {
+          continue; // invalid tenant dir name — skip
         }
+        if (!(await storage.fileExists(fromPath))) continue;
+        await storage.writeFile(siloPath, await storage.readFile(fromPath));
+        await removeSiloForPage(page.slug, other);
+        result.synced++;
+        relocated = true;
+        logger.warn(
+          "silo",
+          `relocated "${page.slug}" from tenant "${other}" to "${tenant}" (index owner)`,
+        );
+        break;
+      }
+
+      if (!relocated) {
+        // Indexed but present in no silo at all — a genuinely missing page.
+        // Report it; the index rebuild will drop the entry if it stays gone.
+        result.stale++;
+        result.errors.push(`${page.slug}: indexed but missing from every silo`);
       }
     } catch (e) {
       result.errors.push(`${page.slug}: ${String(e)}`);

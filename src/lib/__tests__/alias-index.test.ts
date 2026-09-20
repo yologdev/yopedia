@@ -12,19 +12,27 @@ import {
   findDuplicateEntities,
 } from "../alias-index";
 import { writeWikiPage, ensureDirectories, updateIndex } from "../wiki";
+import { _resetStorage } from "../storage";
+import { listSiloSlugs, siloPagePath } from "./helpers/wiki-fixtures";
 import { serializeFrontmatter } from "../frontmatter";
 import type { IndexEntry } from "../types";
 
 let tmpDir: string;
 let originalWikiDir: string | undefined;
 let originalRawDir: string | undefined;
+let originalDataDir: string | undefined;
 
 beforeEach(async () => {
   tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), "alias-index-test-"));
   originalWikiDir = process.env.WIKI_DIR;
   originalRawDir = process.env.RAW_DIR;
+  originalDataDir = process.env.DATA_DIR;
   process.env.WIKI_DIR = path.join(tmpDir, "wiki");
   process.env.RAW_DIR = path.join(tmpDir, "raw");
+  // Silo paths resolve against DATA_DIR (default: cwd), so a test that only
+  // overrides WIKI_DIR writes its pages outside its own tmpDir.
+  process.env.DATA_DIR = tmpDir;
+  _resetStorage();
   await ensureDirectories();
   resetAliasIndex();
 });
@@ -40,6 +48,12 @@ afterEach(async () => {
   } else {
     process.env.RAW_DIR = originalRawDir;
   }
+  if (originalDataDir === undefined) {
+    delete process.env.DATA_DIR;
+  } else {
+    process.env.DATA_DIR = originalDataDir;
+  }
+  _resetStorage();
   await fs.rm(tmpDir, { recursive: true, force: true });
   resetAliasIndex();
 });
@@ -62,14 +76,10 @@ async function createPage(
   // Update index so listWikiPages sees it
   const entries: IndexEntry[] = [{ slug, title, summary: `About ${title}` }];
   // Read existing index entries and append
-  const wikiDir = process.env.WIKI_DIR!;
-  const files = await fs.readdir(wikiDir);
   const allEntries: IndexEntry[] = [];
-  for (const f of files) {
-    if (!f.endsWith(".md") || f === "index.md" || f === "log.md") continue;
-    const s = f.replace(/\.md$/, "");
+  for (const s of await listSiloSlugs()) {
     if (s === slug) continue; // we'll add it below
-    const raw = await fs.readFile(path.join(wikiDir, f), "utf-8");
+    const raw = await fs.readFile(siloPagePath(s), "utf-8");
     const titleMatch = raw.match(/^# (.+)$/m);
     allEntries.push({ slug: s, title: titleMatch?.[1] ?? s, summary: `About ${s}` });
   }

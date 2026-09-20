@@ -48,6 +48,7 @@ import { registerAgent, ensureAgentsDir } from "../agents";
 import { createVault, addToVault, vaultIdFor } from "../vault";
 import { serializeFrontmatter } from "../frontmatter";
 import { isAgentScopedType, isArtifactType } from "../wiki";
+import { writeIndexFixture } from "./helpers/wiki-fixtures";
 import type { AgentProfile } from "../types";
 import { _resetStorage } from "../storage";
 import { relatedByVector, searchByVector } from "../embeddings";
@@ -167,9 +168,7 @@ describe("searchWikiContent", () => {
       "broken-note",
       '---\ntags: [a, "b, c]\n---\n\n# Broken Note\n\nAttention mechanisms explained here.',
     );
-    await writeWikiPage(
-      "index",
-      "# Index\n\n- [Good Note](good-note.md) — g\n- [Broken Note](broken-note.md) — b",
+    await writeIndexFixture("# Index\n\n- [Good Note](good-note.md) — g\n- [Broken Note](broken-note.md) — b",
     );
 
     const slugs = (await searchWikiContent("attention")).map((r) => r.slug);
@@ -189,9 +188,7 @@ describe("searchWikiContent", () => {
       "broken-fuzzy",
       '---\ntags: [a, "b, c]\n---\n\n# Broken Fuzzy\n\nAttnetion mechanisms explained here.',
     );
-    await writeWikiPage(
-      "index",
-      "# Index\n\n- [Good Fuzzy](good-fuzzy.md) — g\n- [Broken Fuzzy](broken-fuzzy.md) — b",
+    await writeIndexFixture("# Index\n\n- [Good Fuzzy](good-fuzzy.md) — g\n- [Broken Fuzzy](broken-fuzzy.md) — b",
     );
 
     const slugs = (await fuzzySearchWikiContent("attention")).map((r) => r.slug);
@@ -213,9 +210,7 @@ describe("searchWikiContent", () => {
       ),
     );
     // Both must be in the index so the type-based exclusion can see them.
-    await writeWikiPage(
-      "index",
-      "# Index\n\n- [Normal](normal-note.md) — n\n- [Agent Note](agent-note.md) — a",
+    await writeIndexFixture("# Index\n\n- [Normal](normal-note.md) — n\n- [Agent Note](agent-note.md) — a",
     );
 
     const slugs = (await searchWikiContent("attention")).map((r) => r.slug);
@@ -243,9 +238,7 @@ describe("searchWikiContent", () => {
         "# Deck X\n\nAttention mechanisms explained here.",
       ),
     );
-    await writeWikiPage(
-      "index",
-      "# Index\n\n- [Note](note-x.md) — n\n- [Artifact](artifact-x.md) — a\n- [Deck](deck-x.md) — d",
+    await writeIndexFixture("# Index\n\n- [Note](note-x.md) — n\n- [Artifact](artifact-x.md) — a\n- [Deck](deck-x.md) — d",
     );
     // All slugs are in the scope (as if a vault curated the artifacts), but the
     // artifacts (html AND slides) must still NOT surface as search hits.
@@ -267,7 +260,7 @@ describe("searchWikiContent", () => {
         "# AK\n\nAttention mechanisms explained here.",
       ),
     );
-    await writeWikiPage("index", "# Index\n\n- [AK](ak.md) — a");
+    await writeIndexFixture("# Index\n\n- [AK](ak.md) — a");
     // Unscoped: agent-scoped page excluded.
     expect((await searchWikiContent("attention")).map((r) => r.slug)).not.toContain("ak");
     // Scoped (the agent's own lens): it MUST surface — guards the scope-aware
@@ -326,7 +319,7 @@ describe("searchWikiContent", () => {
 
   it("skips index.md and log.md", async () => {
     await ensureDirectories();
-    await writeWikiPage("index", "# Index\n\nThis is the wiki index.");
+    await writeIndexFixture("# Index\n\nThis is the wiki index.");
     await writeWikiPage("log", "# Log\n\nThis is the wiki log.");
     await writeWikiPage("real-page", "# Real Page\n\nThis is a real wiki page.");
     await updateIndex([{ title: "Real Page", slug: "real-page", summary: "s" }]);
@@ -503,7 +496,7 @@ describe("findBacklinks", () => {
   it("skips index and log pages", async () => {
     await ensureDirectories();
     await writeWikiPage("target", "# Target\n\nContent.");
-    await writeWikiPage("index", "# Index\n\n- [Target](target.md)");
+    await writeIndexFixture("# Index\n\n- [Target](target.md)");
     await writeWikiPage("log", "# Log\n\n- Ingested [Target](target.md)");
     await writeWikiPage("real-linker", "# Real\n\nSee [Target](target.md).");
     await updateIndex([
@@ -1362,7 +1355,7 @@ describe("resolveScopeSlugs", () => {
       "alice-pg",
       serializeFrontmatter({ owner: "alice" }, "# A\n\nbody"),
     );
-    await writeWikiPage("index", "# Index\n\n- [A](alice-pg.md) — body");
+    await writeIndexFixture("# Index\n\n- [A](alice-pg.md) — body");
     const r = await resolveScopeSlugs("mine", alice);
     expect(r.error).toBeUndefined();
     expect(r.scopeSlugs).toEqual(["alice-pg"]);
