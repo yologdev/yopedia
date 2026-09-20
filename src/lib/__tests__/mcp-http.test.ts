@@ -60,7 +60,12 @@ describe("dispatchMcp — protocol", () => {
 
   it("ping returns an empty result", async () => {
     const res = await dispatchMcp({ id: 2, method: "ping" }, null);
-    expect(res!.result).toEqual({});
+    expect(res!.result).toEqual({
+      resultType: "complete",
+      _meta: {
+        "io.modelcontextprotocol/serverInfo": MCP_SERVER_INFO,
+      },
+    });
   });
 
   it("notifications get no response (null)", async () => {
