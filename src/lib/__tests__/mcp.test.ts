@@ -53,7 +53,7 @@ import {
 } from "../../mcp";
 import { vaultIdFor, listVaults, getVault, createVault } from "../vault";
 import { readWikiPageWithFrontmatter } from "../wiki";
-import { _resetStorage } from "../storage";
+import { _resetStorage, getStorage } from "../storage";
 import { _resetConfigCache } from "../config";
 import { parseFrontmatter } from "../frontmatter";
 import { registerAgent } from "../agents";
@@ -2496,6 +2496,11 @@ describe("lint_wiki", () => {
     );
     await writeIndex([]); // empty index
 
+    // Seed page-index so getOnDiskSlugs() sees the orphan page
+    await getStorage().putIndex("pages", {
+      "orphan-page": { slug: "orphan-page", title: "Orphan Page", summary: "s" },
+    });
+
     const result = await handleLintWiki({ checks: ["orphan-page"] });
     expect(result.issues.length).toBeGreaterThanOrEqual(1);
     const orphanIssues = result.issues.filter((i) => i.type === "orphan-page");
@@ -4781,6 +4786,11 @@ describe("maintenance_scan", () => {
       "---\ntags: [test]\n---\n# Orphan Maintenance\n\nThis page has real content that is long enough to not be empty.",
     );
     await writeIndex([]); // empty index → orphan-maint is an orphan
+
+    // Seed page-index so getOnDiskSlugs() sees the orphan page
+    await getStorage().putIndex("pages", {
+      "orphan-maint": { slug: "orphan-maint", title: "Orphan Maintenance", summary: "s" },
+    });
 
     const result = await handleMaintenanceScan({});
     expect(result).toHaveProperty("tasks");

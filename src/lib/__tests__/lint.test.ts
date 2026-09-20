@@ -4,7 +4,7 @@ import os from "os";
 import path from "path";
 import { writeWikiPage, updateIndex, ensureDirectories, readLog } from "../wiki";
 import type { IndexEntry } from "../types";
-import { _resetStorage } from "../storage";
+import { _resetStorage, getStorage } from "../storage";
 
 // Mock the LLM module so lint never calls the real API
 vi.mock("../llm", () => ({
@@ -90,6 +90,9 @@ describe("lint", () => {
       { slug: "hello", title: "Hello", summary: "A greeting page" },
     ];
     await updateIndex(entries);
+    await getStorage().putIndex("pages", {
+      "hello": { slug: "hello", title: "Hello", summary: "A greeting page" },
+    });
 
     const result = await lint();
 
@@ -109,6 +112,9 @@ describe("lint", () => {
     );
     // Create an empty index with no entries
     await updateIndex([]);
+    await getStorage().putIndex("pages", {
+      "orphan": { slug: "orphan", title: "Orphan", summary: "s" },
+    });
 
     const result = await lint();
     const orphanIssues = result.issues.filter((i) => i.type === "orphan-page");
@@ -140,6 +146,9 @@ describe("lint", () => {
       { slug: "empty", title: "Empty Page", summary: "Barely anything here" },
     ];
     await updateIndex(entries);
+    await getStorage().putIndex("pages", {
+      "empty": { slug: "empty", title: "Empty Page", summary: "Barely anything here" },
+    });
 
     const result = await lint();
     const emptyIssues = result.issues.filter((i) => i.type === "empty-page");
@@ -164,6 +173,10 @@ describe("lint", () => {
       { slug: "beta", title: "Beta Topic", summary: "Beta page" },
     ];
     await updateIndex(entries);
+    await getStorage().putIndex("pages", {
+      "alpha": { slug: "alpha", title: "Alpha", summary: "Alpha page" },
+      "beta": { slug: "beta", title: "Beta Topic", summary: "Beta page" },
+    });
 
     const result = await lint();
     const crossRefIssues = result.issues.filter(
@@ -277,6 +290,10 @@ describe("lint", () => {
       { slug: "neural-network", title: "Neural Network", summary: "NN page" },
     ];
     await updateIndex(entries);
+    await getStorage().putIndex("pages", {
+      "intro": { slug: "intro", title: "Intro", summary: "Intro page" },
+      "neural-network": { slug: "neural-network", title: "Neural Network", summary: "NN page" },
+    });
 
     const result = await lint();
     const crossRefIssues = result.issues.filter(
@@ -905,6 +922,10 @@ Every page must start with a level-1 heading.
       { slug: "transformer", title: "Transformer", summary: "Test" },
       { slug: "bert", title: "BERT", summary: "Test" },
     ]);
+    await getStorage().putIndex("pages", {
+      "transformer": { slug: "transformer", title: "Transformer", summary: "Test" },
+      "bert": { slug: "bert", title: "BERT", summary: "Test" },
+    });
 
     const result = await lint();
     const conceptIssues = result.issues.filter(
@@ -989,6 +1010,9 @@ Every page must start with a level-1 heading.
     await updateIndex([
       { slug: "linker", title: "Linker", summary: "Test" },
     ]);
+    await getStorage().putIndex("pages", {
+      "linker": { slug: "linker", title: "Linker", summary: "Test" },
+    });
 
     const result = await lint();
     const brokenLinkIssues = result.issues.filter(
@@ -1069,6 +1093,9 @@ describe("lint with LintOptions", () => {
       { slug: "ghost", title: "Ghost", summary: "Does not exist on disk" },
     ];
     await updateIndex(entries);
+    await getStorage().putIndex("pages", {
+      "orphan-only": { slug: "orphan-only", title: "Orphan Only", summary: "s" },
+    });
 
     const result = await lint({ checks: ["orphan-page"] });
 
