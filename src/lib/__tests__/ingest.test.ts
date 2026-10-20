@@ -37,10 +37,12 @@ import {
   writeWikiPage,
   readWikiPageWithFrontmatter,
   serializeFrontmatter,
+  tenantForOwner,
   type Frontmatter,
 } from "../wiki";
 import { resetSourceIndex } from "../source-index";
 import { resetAliasIndex } from "../alias-index";
+import { _resetStorage } from "../storage";
 import { hasEmbeddingSupport, searchByVector, contentHash } from "../embeddings";
 import type { IndexEntry, SourceEntry } from "../types";
 
@@ -267,13 +269,17 @@ describe("extractSummary", () => {
 let tmpDir: string;
 let originalWikiDir: string | undefined;
 let originalRawDir: string | undefined;
+let originalDataDir: string | undefined;
 
 beforeEach(async () => {
+  _resetStorage();
   tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), "ingest-test-"));
   originalWikiDir = process.env.WIKI_DIR;
   originalRawDir = process.env.RAW_DIR;
+  originalDataDir = process.env.DATA_DIR;
   process.env.WIKI_DIR = path.join(tmpDir, "wiki");
   process.env.RAW_DIR = path.join(tmpDir, "raw");
+  process.env.DATA_DIR = tmpDir;
 });
 
 afterEach(async () => {
@@ -287,6 +293,12 @@ afterEach(async () => {
   } else {
     process.env.RAW_DIR = originalRawDir;
   }
+  if (originalDataDir === undefined) {
+    delete process.env.DATA_DIR;
+  } else {
+    process.env.DATA_DIR = originalDataDir;
+  }
+  _resetStorage();
   await fs.rm(tmpDir, { recursive: true, force: true });
 });
 
@@ -573,11 +585,13 @@ describe("ingest — YAML frontmatter", () => {
 
     // Simulate a later re-ingest: manually rewrite the page with an older
     // `created` date so we can verify it's preserved across re-ingest even
-    // when the clock has moved.
-    await writeWikiPage(
-      "recurring",
-      `---\ncreated: 2020-01-01\nupdated: 2020-01-01\nsource_count: 1\ntags: [keep-me]\n---\n\n# Recurring\n\nOlder body.\n`,
-    );
+    // when the clock has moved. Write to both flat AND silo paths (matching
+    // the dual-write the lifecycle layer does) so readWikiPage finds the
+    // overwritten content regardless of which path it resolves first.
+    const overwritten = `---\ncreated: 2020-01-01\nupdated: 2020-01-01\nsource_count: 1\ntags: [keep-me]\n---\n\n# Recurring\n\nOlder body.\n`;
+    const tenant = tenantForOwner("system");
+    await writeWikiPage("recurring", overwritten);
+    await writeWikiPage("recurring", overwritten, undefined, undefined, tenant);
 
     await ingest("Recurring", "Second version of the content. More details.");
 
@@ -639,11 +653,14 @@ describe("ingest — Phase 1 frontmatter fields", () => {
     // First ingest to create the page
     await ingest("Phase1 Reingest", "First version content. With details.");
 
-    // Manually rewrite the page with custom Phase 1 fields to simulate edits
-    await writeWikiPage(
-      "phase1-reingest",
-      `---\ncreated: 2024-06-01\nupdated: 2024-06-01\nsource_count: 1\ntags: []\nconfidence: 0.9\nexpiry: 2024-09-01\nauthors: [alice]\ncontributors: [bob]\ndisputed: true\nsupersedes: old-page\naliases: [p1r, phase-one]\n---\n\n# Phase1 Reingest\n\nEdited body.\n`,
-    );
+    // Manually rewrite the page with custom Phase 1 fields to simulate edits.
+    // Write to both flat AND silo paths so readWikiPage finds the overwritten
+    // content regardless of which path it resolves first (page-index seeding
+    // directs reads to the silo).
+    const edited = `---\ncreated: 2024-06-01\nupdated: 2024-06-01\nsource_count: 1\ntags: []\nconfidence: 0.9\nexpiry: 2024-09-01\nauthors: [alice]\ncontributors: [bob]\ndisputed: true\nsupersedes: old-page\naliases: [p1r, phase-one]\n---\n\n# Phase1 Reingest\n\nEdited body.\n`;
+    const tenant = tenantForOwner("system");
+    await writeWikiPage("phase1-reingest", edited);
+    await writeWikiPage("phase1-reingest", edited, undefined, undefined, tenant);
 
     // Re-ingest
     await ingest("Phase1 Reingest", "Second version content. Updated info.");
@@ -696,11 +713,13 @@ describe("ingest — Phase 1 frontmatter fields", () => {
   it("re-ingest does not duplicate system in contributors", async () => {
     await ingest("Phase1 NoDup", "Content for dedup test. Some text.");
 
-    // Manually set contributors to include "system" already
-    await writeWikiPage(
-      "phase1-nodup",
-      `---\ncreated: 2024-06-01\nupdated: 2024-06-01\nsource_count: 1\ntags: []\nconfidence: 0.7\nexpiry: 2024-09-01\nauthors: [system]\ncontributors: [system, editor]\ndisputed: false\nsupersedes:\naliases: []\n---\n\n# Phase1 NoDup\n\nBody.\n`,
-    );
+    // Manually set contributors to include "system" already.
+    // Write to both flat AND silo paths so readWikiPage finds the overwritten
+    // content regardless of which path it resolves first.
+    const edited = `---\ncreated: 2024-06-01\nupdated: 2024-06-01\nsource_count: 1\ntags: []\nconfidence: 0.7\nexpiry: 2024-09-01\nauthors: [system]\ncontributors: [system, editor]\ndisputed: false\nsupersedes:\naliases: []\n---\n\n# Phase1 NoDup\n\nBody.\n`;
+    const tenant = tenantForOwner("system");
+    await writeWikiPage("phase1-nodup", edited);
+    await writeWikiPage("phase1-nodup", edited, undefined, undefined, tenant);
 
     await ingest("Phase1 NoDup", "Second content for dedup test. More text.");
 
@@ -716,10 +735,12 @@ describe("ingest — Phase 1 frontmatter fields", () => {
     await ingest("Phase1 LowConf", "Content for confidence test. Details here.");
 
     // Manually set confidence to 0.5; the re-ingest should recompute, not keep it.
-    await writeWikiPage(
-      "phase1-lowconf",
-      `---\ncreated: 2024-06-01\nupdated: 2024-06-01\nsource_count: 1\ntags: []\nconfidence: 0.5\nexpiry: 2024-09-01\nauthors: [system]\ncontributors: []\ndisputed: false\nsupersedes:\naliases: []\n---\n\n# Phase1 LowConf\n\nBody.\n`,
-    );
+    // Write to both flat AND silo paths so readWikiPage finds the overwritten
+    // content regardless of which path it resolves first.
+    const edited = `---\ncreated: 2024-06-01\nupdated: 2024-06-01\nsource_count: 1\ntags: []\nconfidence: 0.5\nexpiry: 2024-09-01\nauthors: [system]\ncontributors: []\ndisputed: false\nsupersedes:\naliases: []\n---\n\n# Phase1 LowConf\n\nBody.\n`;
+    const tenant = tenantForOwner("system");
+    await writeWikiPage("phase1-lowconf", edited);
+    await writeWikiPage("phase1-lowconf", edited, undefined, undefined, tenant);
 
     await ingest("Phase1 LowConf", "Second content. Updated details.");
 
@@ -3336,7 +3357,7 @@ describe("reingest", () => {
 // ---------------------------------------------------------------------------
 
 import { getLedgerPath, persistToLedger, readLedger, type LedgerEntry } from "../ingest";
-import { _resetStorage, getStorage } from "../storage";
+import { getStorage } from "../storage";
 
 describe("ingest ledger", () => {
   let tmpDir: string;
