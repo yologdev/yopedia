@@ -1,5 +1,4 @@
 import { getStorage } from "./storage";
-import type { FileEntry } from "./storage";
 import { readWikiPage, readWikiPageWithFrontmatter, listWikiPages, wikiRelPath } from "./wiki";
 import { hasLLMKey, callLLM } from "./llm";
 import { loadPageConventions } from "./schema";
@@ -38,35 +37,40 @@ export const INFRASTRUCTURE_FILES = new Set(["index.md", "log.md"]);
 /**
  * Get all content page slugs known to the system.
  *
- * Primary path: read from the `_idx:pages` page-index (O(1) KV read), which
- * aligns lint with the silo-primary read path used by `readWikiPage` /
- * `listWikiPages`.
+ * Always scans the flat wiki directory for `.md` files (the ground truth for
+ * "what is on disk") and merges with the page-index when available. The union
+ * is essential for orphan-page detection: a file written directly to disk
+ * (bypassing the index) must still appear so `checkOrphanPages` can flag it.
  *
- * Fallback (page-index not yet seeded): list `.md` files from the flat wiki
- * directory, excluding infrastructure files. This preserves correct orphan /
- * stale-index detection before the first `rebuildPageIndex()` run.
- *
+ * When the page-index is absent (never seeded), the disk scan is the sole
+ * source — same behaviour as before the index existed.
  */
 export async function getOnDiskSlugs(): Promise<string[]> {
-  try {
-    const idx = await getPageIndex();
-    if (idx) return Object.keys(idx);
-  } catch (err) {
-    logger.warn("lint", "page-index read failed; falling back to listFiles", err);
-  }
+  const slugs = new Set<string>();
 
-  // Fallback: list flat wiki directory
-  let entries: FileEntry[];
+  // 1. Disk scan — the ground truth for orphan detection
   try {
-    entries = await getStorage().listFiles(wikiRelPath(""));
+    const entries = await getStorage().listFiles(wikiRelPath(""));
+    for (const e of entries) {
+      if (e.name.endsWith(".md") && !INFRASTRUCTURE_FILES.has(e.name)) {
+        slugs.add(e.name.replace(/\.md$/, ""));
+      }
+    }
   } catch (err) {
     logger.warn("lint", "listFiles wiki directory failed:", err);
-    return [];
   }
 
-  return entries
-    .filter((e) => e.name.endsWith(".md") && !INFRASTRUCTURE_FILES.has(e.name))
-    .map((e) => e.name.replace(/\.md$/, ""));
+  // 2. Page-index overlay — includes silo-only pages that may not have flat files
+  try {
+    const idx = await getPageIndex();
+    if (idx) {
+      for (const slug of Object.keys(idx)) slugs.add(slug);
+    }
+  } catch (err) {
+    logger.warn("lint", "page-index read failed; continuing with disk scan only", err);
+  }
+
+  return [...slugs];
 }
 
 /**
