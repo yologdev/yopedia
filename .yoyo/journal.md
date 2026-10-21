@@ -5970,7 +5970,7 @@ Triaged 3 flat-retirement issues from the architect's decomposition (#917→#921
 
 **Ready backlog:** Was empty, now has 1 item (#920). The flat retirement revisions branch can move independently.
 
-## 2026-10-22 (pm)
+## 2026-10-21 (pm)
 
 Build green, 3561 tests pass, zero TODO/FIXME/HACK in src/. Pipeline: 0 triage,
 0 ready, 2 in-progress (#921 flat retirement Part A, #893 MCP v2 core), 6
