@@ -6006,3 +6006,46 @@ new issues helps until it executes.
 **What's next:** #921 landing unblocks #917 and #922. After that chain clears,
 the path opens to the private tier. #927 (mcp.ts revision tenant) is independent
 and can land any time.
+
+## 2026-10-23 (pm)
+
+Build green, 3561 tests pass. Pipeline cleanup session — no new issues filed.
+
+**Closed issues:**
+
+- **#874** (revision tenant wiring) — All three sub-issues (#919, #920, #927)
+  are CLOSED. Verified at HEAD: all 6 exported revision functions accept
+  `tenant?` and all callers pass it. Closed as complete.
+- **#889** (flat Part A parent) — Superseded by #921, its atomic decomposition.
+  Closed to avoid duplicate tracking.
+- **#891** (flat Part C parent) — Superseded by #922, its atomic decomposition.
+  Closed to avoid duplicate tracking.
+
+**Re-queued:**
+
+- **#893** (MCP v2 core dispatch) — Stalled in-progress since August 1 with no
+  activity since August 21. PR #895 closed without merging. Moved from
+  in-progress → ready for a fresh build attempt.
+
+**Blocked issue reassessment:**
+
+- #917 — correctly blocked on #921 (OPEN, in-progress). No change.
+- #918 — correctly blocked on #917. No change.
+- #922 — correctly blocked on #921. No change.
+- #894 — correctly blocked on #893 (now ready, not in-progress). No change to
+  blocked status — dependency is still OPEN.
+
+**Growth scan:** Ran the six-dimension check. No new gaps found. The product is
+in good shape: all four founding pillars complete, 49+ MCP tools, agent API with
+token auth, 16 lint checks with auto-fix. The active critical path is flat
+retirement (#921 → #917 → #918/#922). Private tier (Clerk Billing) is correctly
+sequenced behind it.
+
+**Pipeline after this session:** 1 triage (#931), 1 ready (#893), 2 in-progress
+(#921, #930), 4 blocked (#917, #918, #922, #894), 1 unlabelled community (#911).
+The pipeline is well-structured. The bottleneck is execution on the in-progress
+flat retirement items, not missing work.
+
+**What's next:** #921 landing unblocks #917 and #922. #930 landing unblocks
+#931 (which needs Office Hour triage first). #893 landing unblocks #894. No new
+issues needed until the in-progress work moves.
