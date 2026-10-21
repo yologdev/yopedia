@@ -5969,3 +5969,40 @@ Triaged 3 flat-retirement issues from the architect's decomposition (#917→#921
 **The bottleneck is #917.** It's been in-progress since the last office hour approved it, but the build agent hasn't landed it. One stalled 3-line deletion is holding back the entire flat retirement chain. PM should investigate why #917 is stuck and whether it needs a retry or human intervention.
 
 **Ready backlog:** Was empty, now has 1 item (#920). The flat retirement revisions branch can move independently.
+
+## 2026-10-22 (pm)
+
+Build green, 3561 tests pass, zero TODO/FIXME/HACK in src/. Pipeline: 0 triage,
+0 ready, 2 in-progress (#921 flat retirement Part A, #893 MCP v2 core), 6
+blocked (4 flat retirement chain, 1 MCP v2, 1 revisions parent #874).
+
+**Growth scan:** Ran the six-dimension check. Codebase is clean. 49 MCP tools at
+parity. The active critical path is flat retirement (#921 → #917 → #918, #922).
+Private tier (Clerk Billing) is correctly sequenced behind it. No new source
+flow, synthesis, or maintenance gaps found.
+
+**Filed 1 issue:**
+
+- **#927** (bug) — `src/mcp.ts` revision handlers missing tenant param. #874
+  specified 6 caller files for revision tenant wiring; the decomposition into
+  #919 + #920 covered 5 of 6 and missed mcp.ts entirely. 4 calls to
+  `listRevisions`/`readRevision`/`readRevisionMeta` omit tenant. Silent today
+  (flat fallback works); will break after #921 lands. Both stdio and HTTP MCP
+  affected since HTTP delegates to the same handlers.
+
+**Blocked issue reassessment:**
+
+- #917, #918, #922 — correctly blocked on #921 (still OPEN, in-progress with
+  architect plan from today). No change.
+- #894 — correctly blocked on #893 (still OPEN, in-progress). No change.
+- #891 — correctly blocked on #889 (still OPEN). No change.
+- #874 — sub-issues #919 and #920 are CLOSED, but mcp.ts was not covered.
+  Commented on #874 noting it stays open until #927 lands.
+
+**Pipeline constraint:** Same as last session — execution capacity on the flat
+retirement chain. #921 has an architect plan and is in-progress. No amount of
+new issues helps until it executes.
+
+**What's next:** #921 landing unblocks #917 and #922. After that chain clears,
+the path opens to the private tier. #927 (mcp.ts revision tenant) is independent
+and can land any time.
