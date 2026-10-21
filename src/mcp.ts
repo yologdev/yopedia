@@ -70,6 +70,7 @@ import {
   serializeFrontmatter,
   writeWikiPageWithSideEffects,
   deleteWikiPage,
+  tenantForOwner,
   type Frontmatter,
 } from "./lib/wiki";
 import { canReadFrontmatter, canWriteFrontmatter } from "./lib/authz";
@@ -1496,12 +1497,14 @@ export async function handleListRevisions(args: {
   validateSlug(args.slug);
 
   // Verify the page exists before listing revisions.
-  const page = await readWikiPage(args.slug);
+  const page = await readWikiPageWithFrontmatter(args.slug);
   if (!page) {
     throw new Error(`page not found: ${args.slug}`);
   }
 
-  const revisions = await listRevisions(args.slug);
+  const owner = typeof page.frontmatter.owner === "string" ? page.frontmatter.owner : undefined;
+  const tenant = tenantForOwner(owner);
+  const revisions = await listRevisions(args.slug, tenant);
   return { slug: args.slug, revisions };
 }
 
@@ -1519,18 +1522,20 @@ export async function handleReadRevision(args: {
   }
 
   // Verify the page exists.
-  const page = await readWikiPage(args.slug);
+  const page = await readWikiPageWithFrontmatter(args.slug);
   if (!page) {
     throw new Error(`page not found: ${args.slug}`);
   }
 
-  const content = await readRevision(args.slug, args.timestamp);
+  const owner = typeof page.frontmatter.owner === "string" ? page.frontmatter.owner : undefined;
+  const tenant = tenantForOwner(owner);
+  const content = await readRevision(args.slug, args.timestamp, tenant);
   if (content === null) {
     throw new Error(`revision not found: ${args.timestamp}`);
   }
 
   // Read optional author/reason sidecar.
-  const meta = await readRevisionMeta(args.slug, args.timestamp);
+  const meta = await readRevisionMeta(args.slug, args.timestamp, tenant);
 
   return {
     slug: args.slug,
@@ -1570,7 +1575,9 @@ export async function handleRevertRevision(args: {
     throw new Error(`page not found: ${args.slug}`);
   }
 
-  const revisionContent = await readRevision(args.slug, args.timestamp);
+  const revertOwner = typeof existing.frontmatter.owner === "string" ? existing.frontmatter.owner : undefined;
+  const revertTenant = tenantForOwner(revertOwner);
+  const revisionContent = await readRevision(args.slug, args.timestamp, revertTenant);
   if (revisionContent === null) {
     throw new Error(`revision not found: ${args.timestamp}`);
   }

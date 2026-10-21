@@ -3308,9 +3308,21 @@ describe("reingest", () => {
     delete process.env.ANTHROPIC_API_KEY;
     _resetConfigCache();
     try {
-      await writeTestPage(
-        "authored-reingest",
-        "---\nsource_url: https://x.com/u/status/456\n---\n# Authored\n\nold body.",
+      const pageContent =
+        "---\nsource_url: https://x.com/u/status/456\n---\n# Authored\n\nold body.";
+      await writeTestPage("authored-reingest", pageContent);
+      // Also write to the silo path so writeWikiPage(…, tenant) can find
+      // the prior content and save a revision into the tenant directory.
+      // The ingest code sets owner = author ("testuser") when no explicit
+      // owner is provided, so the lifecycle writes to tenants/testuser/.
+      const { tenantForOwner } = await import("../wiki");
+      const tenant = tenantForOwner("testuser");
+      const siloDir = path.join(tmpDir, "tenants", tenant, "wiki");
+      await fs.mkdir(siloDir, { recursive: true });
+      await fs.writeFile(
+        path.join(siloDir, "authored-reingest.md"),
+        pageContent,
+        "utf-8",
       );
       await writeIndex([
         { title: "Authored", slug: "authored-reingest", summary: "authored" },
@@ -4061,7 +4073,9 @@ describe("list_revisions", () => {
 
     // Save a revision (simulates what happens before an update)
     const { saveRevision } = await import("../../lib/revisions");
-    await saveRevision("test-page", "---\ntitle: Test\n---\n# Test\nVersion 1", "yoyo", "initial save");
+    const { tenantForOwner } = await import("../wiki");
+    const tenant = tenantForOwner(undefined);
+    await saveRevision("test-page", "---\ntitle: Test\n---\n# Test\nVersion 1", "yoyo", "initial save", tenant);
 
     const result = await handleListRevisions({ slug: "test-page" });
     expect(result.slug).toBe("test-page");
@@ -4103,7 +4117,9 @@ describe("read_revision", () => {
     await writeTestPage("test-page", content);
 
     const { saveRevision } = await import("../../lib/revisions");
-    await saveRevision("test-page", content, "yoyo", "snapshot");
+    const { tenantForOwner } = await import("../wiki");
+    const tenant = tenantForOwner(undefined);
+    await saveRevision("test-page", content, "yoyo", "snapshot", tenant);
 
     // Get the timestamp from list
     const list = await handleListRevisions({ slug: "test-page" });
@@ -4688,7 +4704,9 @@ describe("revert_revision", () => {
     await writeTestPage("revert-test", v1Content);
 
     const { saveRevision } = await import("../../lib/revisions");
-    await saveRevision("revert-test", v1Content, "yoyo", "v1 snapshot");
+    const { tenantForOwner } = await import("../wiki");
+    const tenant = tenantForOwner(undefined);
+    await saveRevision("revert-test", v1Content, "yoyo", "v1 snapshot", tenant);
 
     // Overwrite with v2
     await writeTestPage("revert-test", "---\ntitle: Test\n---\n# Test\nVersion 2");
@@ -4717,7 +4735,9 @@ describe("revert_revision", () => {
     await writeTestPage("revert-default", content);
 
     const { saveRevision } = await import("../../lib/revisions");
-    await saveRevision("revert-default", content, "yoyo", "snapshot");
+    const { tenantForOwner } = await import("../wiki");
+    const tenant = tenantForOwner(undefined);
+    await saveRevision("revert-default", content, "yoyo", "snapshot", tenant);
 
     const list = await handleListRevisions({ slug: "revert-default" });
     const ts = list.revisions[0].timestamp;
