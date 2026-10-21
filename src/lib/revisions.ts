@@ -125,10 +125,12 @@ export async function saveRevision(
  *
  * Returns an empty array when no revisions exist (new page or never edited).
  */
-export async function listRevisions(slug: string): Promise<Revision[]> {
+export async function listRevisions(slug: string, tenant?: string): Promise<Revision[]> {
   validateSlug(slug);
   const storage = getStorage();
-  const dirPath = revisionsRelPath(slug);
+  const dirPath = tenant
+    ? tenantRevisionsRelPath(tenant, slug)
+    : revisionsRelPath(slug);
 
   let entries: { name: string; isDirectory: boolean }[];
   try {
@@ -156,13 +158,21 @@ export async function listRevisions(slug: string): Promise<Revision[]> {
       if (Number.isNaN(timestamp) || timestamp <= 0) return null;
 
       try {
-        const stat = await storage.stat(revisionsRelPath(slug, entry.name));
+        const stat = await storage.stat(
+          tenant
+            ? tenantRevisionsRelPath(tenant, slug, entry.name)
+            : revisionsRelPath(slug, entry.name),
+        );
 
         // Read the optional author/reason sidecar.
         let author: string | undefined;
         let reason: string | undefined;
         try {
-          const metaRaw = await storage.readFile(revisionsRelPath(slug, `${stem}.meta.json`));
+          const metaRaw = await storage.readFile(
+            tenant
+              ? tenantRevisionsRelPath(tenant, slug, `${stem}.meta.json`)
+              : revisionsRelPath(slug, `${stem}.meta.json`),
+          );
           const meta = JSON.parse(metaRaw) as { author?: string; reason?: string };
           if (typeof meta.author === "string") {
             author = meta.author;
@@ -224,10 +234,13 @@ export interface RevisionAuthor {
 export async function listRevisionAuthors(
   slug: string,
   max: number,
+  tenant?: string,
 ): Promise<RevisionAuthor[]> {
   validateSlug(slug);
   const storage = getStorage();
-  const dirPath = revisionsRelPath(slug);
+  const dirPath = tenant
+    ? tenantRevisionsRelPath(tenant, slug)
+    : revisionsRelPath(slug);
 
   let entries: { name: string; isDirectory: boolean }[];
   try {
@@ -264,7 +277,11 @@ export async function listRevisionAuthors(
       // No sidecar in the listing → unattributed; a valid event, but no read.
       if (!sidecars.has(timestamp)) return base;
       try {
-        const raw = await storage.readFile(revisionsRelPath(slug, `${timestamp}.meta.json`));
+        const raw = await storage.readFile(
+          tenant
+            ? tenantRevisionsRelPath(tenant, slug, `${timestamp}.meta.json`)
+            : revisionsRelPath(slug, `${timestamp}.meta.json`),
+        );
         const meta = JSON.parse(raw) as { author?: string; reason?: string };
         if (typeof meta.author === "string") base.author = meta.author;
         if (typeof meta.reason === "string") base.reason = meta.reason;
@@ -293,10 +310,15 @@ export async function listRevisionAuthors(
 export async function readRevision(
   slug: string,
   timestamp: number,
+  tenant?: string,
 ): Promise<string | null> {
   validateSlug(slug);
   try {
-    return await getStorage().readFile(revisionsRelPath(slug, `${timestamp}.md`));
+    return await getStorage().readFile(
+      tenant
+        ? tenantRevisionsRelPath(tenant, slug, `${timestamp}.md`)
+        : revisionsRelPath(slug, `${timestamp}.md`),
+    );
   } catch (err) {
     if (!isEnoent(err)) {
       logger.warn("revisions", `unexpected error reading revision "${slug}@${timestamp}":`, err);
@@ -320,10 +342,15 @@ export interface RevisionMeta {
 export async function readRevisionMeta(
   slug: string,
   timestamp: number,
+  tenant?: string,
 ): Promise<RevisionMeta | null> {
   validateSlug(slug);
   try {
-    const raw = await getStorage().readFile(revisionsRelPath(slug, `${timestamp}.meta.json`));
+    const raw = await getStorage().readFile(
+      tenant
+        ? tenantRevisionsRelPath(tenant, slug, `${timestamp}.meta.json`)
+        : revisionsRelPath(slug, `${timestamp}.meta.json`),
+    );
     const meta = JSON.parse(raw) as Record<string, unknown>;
     const result: RevisionMeta = {};
     if (typeof meta.author === "string") result.author = meta.author;
@@ -343,10 +370,14 @@ export async function readRevisionMeta(
  * Called when a page is permanently deleted so we don't leave orphaned
  * revision data on disk.
  */
-export async function deleteRevisions(slug: string): Promise<void> {
+export async function deleteRevisions(slug: string, tenant?: string): Promise<void> {
   validateSlug(slug);
   try {
-    await getStorage().deleteDirectory(revisionsRelPath(slug));
+    await getStorage().deleteDirectory(
+      tenant
+        ? tenantRevisionsRelPath(tenant, slug)
+        : revisionsRelPath(slug),
+    );
   } catch (err) {
     // Already gone — nothing to do.
     if (!isEnoent(err)) {
