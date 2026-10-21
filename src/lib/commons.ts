@@ -4,9 +4,9 @@
  * model each page lives in its owner's silo and the commons is *not* separate
  * storage but this persisted index over the public ones.
  *
- * Phase-1a: the index is *maintained* on the write/delete path but not yet read
- * by any surface (reads still use the flat wiki index) — additive and
- * behavior-preserving. A later phase switches the commons read surfaces over.
+ * The index is maintained on the write/delete path and read by the homepage,
+ * browse surface, and graph. Fail-soft on the write side — a commons error
+ * must never break the page write/delete (see lifecycle.ts).
  */
 
 import { getStorage } from "./storage";
