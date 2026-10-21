@@ -526,3 +526,172 @@ describe("saveRevision with tenant parameter", () => {
     expect(content).toBe("# V1\n\nContent.");
   });
 });
+
+// ---------------------------------------------------------------------------
+// Tenant-aware listRevisions
+// ---------------------------------------------------------------------------
+describe("listRevisions with tenant parameter", () => {
+  it("lists revisions from tenant silo path", async () => {
+    await ensureDirectories();
+
+    await saveRevision("tenant-list", "# V1", "yoyo", "first", "bob");
+    await saveRevision("tenant-list", "# V2", "yoyo", "second", "bob");
+
+    const revisions = await listRevisions("tenant-list", "bob");
+    expect(revisions).toHaveLength(2);
+    // Newest first
+    expect(revisions[0].sizeBytes).toBe(Buffer.byteLength("# V2", "utf-8"));
+    expect(revisions[1].sizeBytes).toBe(Buffer.byteLength("# V1", "utf-8"));
+    expect(revisions[0].author).toBe("yoyo");
+    expect(revisions[0].reason).toBe("second");
+  });
+
+  it("returns empty array when tenant has no revisions", async () => {
+    await ensureDirectories();
+    const revisions = await listRevisions("no-history", "bob");
+    expect(revisions).toEqual([]);
+  });
+
+  it("does not see flat revisions when tenant is provided", async () => {
+    await ensureDirectories();
+
+    // Save to flat path (no tenant)
+    await saveRevision("cross-check", "# Flat");
+    // Save to tenant path
+    await saveRevision("cross-check", "# Tenant", undefined, undefined, "carol");
+
+    const flat = await listRevisions("cross-check");
+    expect(flat).toHaveLength(1);
+
+    const tenant = await listRevisions("cross-check", "carol");
+    expect(tenant).toHaveLength(1);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Tenant-aware listRevisionAuthors
+// ---------------------------------------------------------------------------
+describe("listRevisionAuthors with tenant parameter", () => {
+  it("lists revision authors from tenant silo path", async () => {
+    await ensureDirectories();
+
+    await saveRevision("tenant-authors", "# V1", "alice", "edit one", "dave");
+    await saveRevision("tenant-authors", "# V2", "bob", "edit two", "dave");
+
+    const authors = await listRevisionAuthors("tenant-authors", 10, "dave");
+    expect(authors).toHaveLength(2);
+    expect(authors[0].author).toBe("bob");
+    expect(authors[1].author).toBe("alice");
+  });
+
+  it("returns empty array when tenant has no revisions", async () => {
+    await ensureDirectories();
+    const authors = await listRevisionAuthors("no-history", 10, "dave");
+    expect(authors).toEqual([]);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Tenant-aware readRevision
+// ---------------------------------------------------------------------------
+describe("readRevision with tenant parameter", () => {
+  it("reads revision content from tenant silo path", async () => {
+    await ensureDirectories();
+
+    await saveRevision("tenant-read", "# Silo content", undefined, undefined, "eve");
+
+    const revisions = await listRevisions("tenant-read", "eve");
+    expect(revisions).toHaveLength(1);
+
+    const content = await readRevision("tenant-read", revisions[0].timestamp, "eve");
+    expect(content).toBe("# Silo content");
+  });
+
+  it("returns null when revision does not exist in tenant", async () => {
+    await ensureDirectories();
+    const content = await readRevision("nonexistent", 9999999999999, "eve");
+    expect(content).toBeNull();
+  });
+
+  it("does not read flat revision when tenant is provided", async () => {
+    await ensureDirectories();
+
+    await saveRevision("isolation-read", "# Flat content");
+    const flatRevisions = await listRevisions("isolation-read");
+
+    // Reading with a tenant should not find the flat revision
+    const content = await readRevision("isolation-read", flatRevisions[0].timestamp, "eve");
+    expect(content).toBeNull();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Tenant-aware readRevisionMeta
+// ---------------------------------------------------------------------------
+describe("readRevisionMeta with tenant parameter", () => {
+  it("reads meta sidecar from tenant silo path", async () => {
+    await ensureDirectories();
+
+    await saveRevision("tenant-meta", "# Content", "yoyo", "silo reason", "frank");
+
+    const revisions = await listRevisions("tenant-meta", "frank");
+    expect(revisions).toHaveLength(1);
+
+    const meta = await readRevisionMeta("tenant-meta", revisions[0].timestamp, "frank");
+    expect(meta).not.toBeNull();
+    expect(meta!.author).toBe("yoyo");
+    expect(meta!.reason).toBe("silo reason");
+  });
+
+  it("returns null when no sidecar exists in tenant", async () => {
+    await ensureDirectories();
+
+    await saveRevision("tenant-meta-none", "# Content", undefined, undefined, "frank");
+
+    const revisions = await listRevisions("tenant-meta-none", "frank");
+    const meta = await readRevisionMeta("tenant-meta-none", revisions[0].timestamp, "frank");
+    expect(meta).toBeNull();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Tenant-aware deleteRevisions
+// ---------------------------------------------------------------------------
+describe("deleteRevisions with tenant parameter", () => {
+  it("deletes revisions from tenant silo path", async () => {
+    await ensureDirectories();
+
+    await saveRevision("tenant-del", "# V1", "yoyo", "edit", "grace");
+    const before = await listRevisions("tenant-del", "grace");
+    expect(before).toHaveLength(1);
+
+    await deleteRevisions("tenant-del", "grace");
+
+    const after = await listRevisions("tenant-del", "grace");
+    expect(after).toEqual([]);
+  });
+
+  it("does not delete flat revisions when tenant is provided", async () => {
+    await ensureDirectories();
+
+    await saveRevision("tenant-del-iso", "# Flat");
+    await saveRevision("tenant-del-iso", "# Silo", undefined, undefined, "grace");
+
+    // Delete only tenant revisions
+    await deleteRevisions("tenant-del-iso", "grace");
+
+    // Flat revisions should still exist
+    const flat = await listRevisions("tenant-del-iso");
+    expect(flat).toHaveLength(1);
+
+    // Tenant revisions should be gone
+    const tenant = await listRevisions("tenant-del-iso", "grace");
+    expect(tenant).toEqual([]);
+  });
+
+  it("handles nonexistent tenant revision directory gracefully", async () => {
+    await ensureDirectories();
+    // Should not throw
+    await deleteRevisions("nonexistent", "grace");
+  });
+});
