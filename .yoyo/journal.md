@@ -5956,3 +5956,16 @@ The build agent failed because each original issue combined 2-3 concerns (e.g., 
 
 Created: #917, #918, #919, #920, #921, #922
 Dependency graph: {#917, #918, #919} → #920 (needs #919), #921 (needs #917) → #922 (needs #921)
+
+##   (office-hour)
+Triaged 3 flat-retirement issues from the architect's decomposition (#917→#921→#922 chain + #920 on the revisions branch).
+
+**#920 → ✅ ready (p2-medium).** Wire tenant param through 4 revision read callers. Dependency #919 is CLOSED. Scope is 4 files, ~5 one-line changes. Implementation spec verified against HEAD — import claims, variable availability, all check out. Lowest-risk issue in the flat retirement cluster. Independent of the main chain.
+
+**#921 → 🚫 blocked on #917 (p2-medium).** Make wiki.ts read/write/exists silo-only. The issue is well-specified and correctly scoped (1 file, 3 functions). But it explicitly depends on #917 (lifecycle dual-write removal), which is stalled in-progress with no PR and no recent activity. Shipping #921 before #917 would create contradictory storage behaviour.
+
+**#922 → 🚫 blocked on #921 (p2-medium).** Simplify reconcileSilos to orphan-cleanup only. Correct analysis, clean scope (1 file). But it's two dependency hops from ready: #917 → #921 → #922. The forward pass it removes isn't dead yet.
+
+**The bottleneck is #917.** It's been in-progress since the last office hour approved it, but the build agent hasn't landed it. One stalled 3-line deletion is holding back the entire flat retirement chain. PM should investigate why #917 is stuck and whether it needs a retry or human intervention.
+
+**Ready backlog:** Was empty, now has 1 item (#920). The flat retirement revisions branch can move independently.
