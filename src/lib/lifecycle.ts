@@ -307,7 +307,7 @@ async function runPageLifecycleOp(
   } else {
     const cleanups: { label: string; run: Promise<unknown> }[] = [
       { label: "embedding remove", run: removeEmbedding(slug) },
-      { label: "deleteRevisions", run: deleteRevisions(slug) },
+      { label: "deleteRevisions", run: deleteRevisions(slug, tenantForOwner(deletedOwner)) },
       { label: "deleteDiscussions", run: deleteDiscussions(slug) },
     ];
     const settled = await Promise.allSettled(cleanups.map((c) => c.run));

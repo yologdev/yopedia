@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { readWikiPage, readWikiPageWithFrontmatter, writeWikiPageWithSideEffects } from "@/lib/wiki";
+import { readWikiPageWithFrontmatter, writeWikiPageWithSideEffects, tenantForOwner } from "@/lib/wiki";
 import { listRevisions, readRevision, readRevisionMeta } from "@/lib/revisions";
 import { extractSummary } from "@/lib/ingest";
 import { serializeFrontmatter } from "@/lib/frontmatter";
@@ -23,8 +23,8 @@ export async function GET(req: Request, { params }: RouteParams) {
   try {
     const { slug } = await params;
 
-    // Check the page exists first.
-    const page = await readWikiPage(slug);
+    // Check the page exists first (and grab frontmatter for tenant resolution).
+    const page = await readWikiPageWithFrontmatter(slug);
     if (!page) {
       return NextResponse.json(
         { error: `page not found: ${slug}` },
@@ -42,6 +42,8 @@ export async function GET(req: Request, { params }: RouteParams) {
 
     const url = new URL(req.url);
     const timestampParam = url.searchParams.get("timestamp");
+    const owner = typeof page.frontmatter.owner === "string" ? page.frontmatter.owner : undefined;
+    const tenant = tenantForOwner(owner);
 
     if (timestampParam !== null) {
       // Fetch a specific revision's content.
@@ -53,7 +55,7 @@ export async function GET(req: Request, { params }: RouteParams) {
         );
       }
 
-      const content = await readRevision(slug, timestamp);
+      const content = await readRevision(slug, timestamp, tenant);
       if (content === null) {
         return NextResponse.json(
           { error: `revision not found: ${timestamp}` },
@@ -62,7 +64,7 @@ export async function GET(req: Request, { params }: RouteParams) {
       }
 
       // Read optional author/reason sidecar.
-      const meta = await readRevisionMeta(slug, timestamp);
+      const meta = await readRevisionMeta(slug, timestamp, tenant);
 
       return NextResponse.json({
         content,
@@ -78,7 +80,7 @@ export async function GET(req: Request, { params }: RouteParams) {
     }
 
     // List all revisions.
-    const revisions = await listRevisions(slug);
+    const revisions = await listRevisions(slug, tenant);
     return NextResponse.json({ revisions });
   } catch (err) {
     const message = getErrorMessage(err);
@@ -154,7 +156,9 @@ export async function POST(req: Request, { params }: RouteParams) {
     }
 
     // Load the revision content.
-    const revisionContent = await readRevision(slug, timestamp);
+    const existingOwner = typeof existing.frontmatter.owner === "string" ? existing.frontmatter.owner : undefined;
+    const tenant = tenantForOwner(existingOwner);
+    const revisionContent = await readRevision(slug, timestamp, tenant);
     if (revisionContent === null) {
       return NextResponse.json(
         { error: `revision not found: ${timestamp}` },

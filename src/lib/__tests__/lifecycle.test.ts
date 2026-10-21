@@ -439,18 +439,18 @@ describe("deleteWikiPage", () => {
     ]);
 
     // Create some revisions (add small delay to ensure distinct timestamps)
-    await saveRevision("rev-page", "# Rev Page\n\nOld version.\n");
+    await saveRevision("rev-page", "# Rev Page\n\nOld version.\n", undefined, undefined, "yopedia");
     await new Promise((r) => setTimeout(r, 15));
-    await saveRevision("rev-page", "# Rev Page\n\nOlder version.\n");
+    await saveRevision("rev-page", "# Rev Page\n\nOlder version.\n", undefined, undefined, "yopedia");
 
     // Verify revisions exist
-    const revsBefore = await listRevisions("rev-page");
+    const revsBefore = await listRevisions("rev-page", "yopedia");
     expect(revsBefore.length).toBeGreaterThanOrEqual(1);
 
     await deleteWikiPage("rev-page");
 
     // Revisions should be gone
-    const revsAfter = await listRevisions("rev-page");
+    const revsAfter = await listRevisions("rev-page", "yopedia");
     expect(revsAfter).toHaveLength(0);
   });
 

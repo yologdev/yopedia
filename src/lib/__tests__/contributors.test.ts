@@ -80,9 +80,9 @@ describe("contributors data layer", () => {
       await createPage("page-b", "Page B", "# Page B\n\nContent.");
 
       // Alice edits page-a twice, bob edits page-b once
-      await saveRevision("page-a", "# Page A\n\nv1", "alice");
-      await saveRevision("page-a", "# Page A\n\nv2", "alice");
-      await saveRevision("page-b", "# Page B\n\nv1", "bob");
+      await saveRevision("page-a", "# Page A\n\nv1", "alice", undefined, "yopedia");
+      await saveRevision("page-a", "# Page A\n\nv2", "alice", undefined, "yopedia");
+      await saveRevision("page-b", "# Page B\n\nv1", "bob", undefined, "yopedia");
 
       const contributors = await listContributors();
       expect(contributors).toHaveLength(2);
@@ -96,7 +96,7 @@ describe("contributors data layer", () => {
     it("excludes agent-scoped pages so agents aren't listed as contributors", async () => {
       // A human page edited by a human...
       await createPage("page-a", "Page A", "# Page A\n\nContent.");
-      await saveRevision("page-a", "# Page A\n\nv1", "alice");
+      await saveRevision("page-a", "# Page A\n\nv1", "alice", undefined, "yopedia");
 
       // ...and an agent-scoped page authored by the agent itself. Its author
       // (the agent's composite id) must NOT surface as a human contributor.
@@ -105,7 +105,7 @@ describe("contributors data layer", () => {
         "Agent Note",
         "---\ntype: agent-knowledge\n---\n\n# Agent Note\n\nLearned.",
       );
-      await saveRevision("agent-note", "# Agent Note\n\nv1", "yuanhao--yoyo");
+      await saveRevision("agent-note", "# Agent Note\n\nv1", "yuanhao--yoyo", undefined, "yopedia");
 
       const contributors = await listContributors();
       expect(contributors.map((c) => c.handle)).toEqual(["alice"]);
@@ -117,9 +117,9 @@ describe("contributors data layer", () => {
         "Page A",
         "---\nowner: alice\nvisibility: public\n---\n\n# Page A\n\nc.",
       );
-      await saveRevision("page-a", "# Page A\n\nv1", "alice");
-      await saveRevision("page-a", "# Page A\n\nv2", "system");
-      await saveRevision("page-a", "# Page A\n\nv3", "lint-fix");
+      await saveRevision("page-a", "# Page A\n\nv1", "alice", undefined, "yopedia");
+      await saveRevision("page-a", "# Page A\n\nv2", "system", undefined, "yopedia");
+      await saveRevision("page-a", "# Page A\n\nv3", "lint-fix", undefined, "yopedia");
       // ...and a talk comment by an automation actor (the mergeTalkActivity path).
       await createThread("page-a", "T", "alice", "post");
       await addComment("page-a", 0, "lint-fix", "auto comment");
@@ -150,7 +150,7 @@ describe("contributors data layer", () => {
         "Pub",
         "---\nowner: alice\nvisibility: public\n---\n\n# Pub\n\nc.",
       );
-      await saveRevision("pub", "# Pub\n\nv1", "alice");
+      await saveRevision("pub", "# Pub\n\nv1", "alice", undefined, "alice");
 
       // A PRIVATE page owned+edited by bob (invisible to anon → NOT in index).
       await createPage(
@@ -158,7 +158,7 @@ describe("contributors data layer", () => {
         "Priv",
         "---\nowner: bob\nvisibility: private\n---\n\n# Priv\n\nc.",
       );
-      await saveRevision("priv", "# Priv\n\nv1", "bob");
+      await saveRevision("priv", "# Priv\n\nv1", "bob", undefined, "bob");
 
       // Build the index from the ANONYMOUS scan: only alice/pub.
       const { rebuildContributorIndex, getContributorIndex } = await import(
@@ -184,9 +184,9 @@ describe("contributors data layer", () => {
       await createPage("page-y", "Page Y", "# Page Y\n\nContent.");
 
       // Alice edits both pages
-      await saveRevision("page-x", "# Page X\n\nv1", "alice");
-      await saveRevision("page-x", "# Page X\n\nv2", "alice");
-      await saveRevision("page-y", "# Page Y\n\nv1", "alice");
+      await saveRevision("page-x", "# Page X\n\nv1", "alice", undefined, "yopedia");
+      await saveRevision("page-x", "# Page X\n\nv2", "alice", undefined, "yopedia");
+      await saveRevision("page-y", "# Page Y\n\nv1", "alice", undefined, "yopedia");
 
       const profile = await buildContributorProfile("alice");
       expect(profile.handle).toBe("alice");
@@ -196,12 +196,12 @@ describe("contributors data layer", () => {
 
     it("uses the contributor index when present (O(1) fast-path, not a live scan)", async () => {
       await createPage("idx-page", "Idx", "# Idx\n\nc");
-      await saveRevision("idx-page", "# Idx\n\nv1", "alice");
+      await saveRevision("idx-page", "# Idx\n\nv1", "alice", undefined, "yopedia");
       // Seed the index from the current on-disk state → alice has 1 edit.
       const { rebuildContributorIndex } = await import("../contributor-index");
       await rebuildContributorIndex();
       // Add MORE on-disk activity the index doesn't know about.
-      await saveRevision("idx-page", "# Idx\n\nv2", "alice");
+      await saveRevision("idx-page", "# Idx\n\nv2", "alice", undefined, "yopedia");
       // The profile must come from the (now-stale) index, not a fresh scan — so
       // it still reports 1 edit. A re-scan would read the revisions → 2.
       const profile = await buildContributorProfile("alice");
@@ -210,11 +210,11 @@ describe("contributors data layer", () => {
 
     it("returns an empty profile (no scan) for a handle absent from a present index", async () => {
       await createPage("idx-page2", "Idx2", "# Idx2\n\nc");
-      await saveRevision("idx-page2", "# Idx2\n\nv1", "alice");
+      await saveRevision("idx-page2", "# Idx2\n\nv1", "alice", undefined, "yopedia");
       const { rebuildContributorIndex } = await import("../contributor-index");
       await rebuildContributorIndex(); // index present, knows only alice
       // bob isn't in the index; give him on-disk activity a scan WOULD find.
-      await saveRevision("idx-page2", "# Idx2\n\nv2", "bob");
+      await saveRevision("idx-page2", "# Idx2\n\nv2", "bob", undefined, "yopedia");
       // Index present → bob short-circuits to a zeroed profile, NOT a scan
       // (which would report editCount 1). Guards the "absent handle still skips
       // the scan" contract against a regression that re-scans unknown handles.
@@ -263,7 +263,7 @@ describe("contributors data layer", () => {
 
       // Create 60 revisions by "prolific" (well above the /50 threshold)
       for (let i = 0; i < 60; i++) {
-        await saveRevision("page-trust", `# Trust\n\nv${i}`, "prolific");
+        await saveRevision("page-trust", `# Trust\n\nv${i}`, "prolific", undefined, "yopedia");
       }
 
       const profile = await buildContributorProfile("prolific");
@@ -276,7 +276,7 @@ describe("contributors data layer", () => {
 
       // 10 edits → trust = min(1, 10/50) = 0.2
       for (let i = 0; i < 10; i++) {
-        await saveRevision("page-low", `# Low\n\nv${i}`, "newcomer");
+        await saveRevision("page-low", `# Low\n\nv${i}`, "newcomer", undefined, "yopedia");
       }
 
       const profile = await buildContributorProfile("newcomer");
@@ -305,8 +305,12 @@ describe("contributors data layer", () => {
     it("reflects actual date range from revisions", async () => {
       await createPage("page-dates", "Dates", "# Dates\n\nContent.");
 
-      // Create revisions with known timestamps by writing files directly
-      const revisionsDir = path.join(process.env.WIKI_DIR!, ".revisions", "page-dates");
+      // Create revisions with known timestamps by writing files directly.
+      // Page has no owner → tenantForOwner(undefined) = "yopedia", so
+      // revisions must live in the tenant silo path.
+      const revisionsDir = path.join(
+        tmpDir, "tenants", "yopedia", "wiki", ".revisions", "page-dates",
+      );
       await fs.mkdir(revisionsDir, { recursive: true });
 
       const earlyTs = 1700000000000; // 2023-11-14
@@ -345,7 +349,7 @@ describe("contributors data layer", () => {
 
       // Alice makes several edits, no one reverts
       for (let i = 0; i < 10; i++) {
-        await saveRevision("page-norevert", `# No Revert\n\nv${i} ${"x".repeat(100)}`, "alice");
+        await saveRevision("page-norevert", `# No Revert\n\nv${i} ${"x".repeat(100)}`, "alice", undefined, "yopedia");
       }
 
       const profile = await buildContributorProfile("alice");
@@ -358,9 +362,9 @@ describe("contributors data layer", () => {
       await createPage("page-reverted", "Reverted", "# Reverted\n\nContent.");
 
       // Alice writes a long revision
-      await saveRevision("page-reverted", "# Reverted\n\n" + "x".repeat(1000), "alice");
+      await saveRevision("page-reverted", "# Reverted\n\n" + "x".repeat(1000), "alice", undefined, "yopedia");
       // Bob substantially reduces it (>50% reduction = revert of alice)
-      await saveRevision("page-reverted", "# Reverted\n\nShort.", "bob");
+      await saveRevision("page-reverted", "# Reverted\n\nShort.", "bob", undefined, "yopedia");
 
       const aliceProfile = await buildContributorProfile("alice");
       expect(aliceProfile.revertCount).toBe(1);
@@ -376,8 +380,8 @@ describe("contributors data layer", () => {
       await createPage("page-self", "Self Edit", "# Self\n\nContent.");
 
       // Alice writes a long revision then shortens it herself
-      await saveRevision("page-self", "# Self\n\n" + "x".repeat(1000), "alice");
-      await saveRevision("page-self", "# Self\n\nShort.", "alice");
+      await saveRevision("page-self", "# Self\n\n" + "x".repeat(1000), "alice", undefined, "yopedia");
+      await saveRevision("page-self", "# Self\n\nShort.", "alice", undefined, "yopedia");
 
       const profile = await buildContributorProfile("alice");
       // Same author reducing own content is NOT a revert
@@ -388,9 +392,9 @@ describe("contributors data layer", () => {
       await createPage("page-small-edit", "Small Edit", "# Small\n\nContent.");
 
       // Alice writes 100 chars
-      await saveRevision("page-small-edit", "# Small\n\n" + "x".repeat(100), "alice");
+      await saveRevision("page-small-edit", "# Small\n\n" + "x".repeat(100), "alice", undefined, "yopedia");
       // Bob trims only 30% (not enough to count as revert)
-      await saveRevision("page-small-edit", "# Small\n\n" + "x".repeat(77), "bob");
+      await saveRevision("page-small-edit", "# Small\n\n" + "x".repeat(77), "bob", undefined, "yopedia");
 
       const profile = await buildContributorProfile("alice");
       expect(profile.revertCount).toBe(0);
@@ -401,8 +405,8 @@ describe("contributors data layer", () => {
 
       // Alice writes and bob reverts 6 times (above the 5-revert cap)
       for (let i = 0; i < 6; i++) {
-        await saveRevision("page-multi", `# Multi\n\n${"x".repeat(1000)} round ${i}`, "alice");
-        await saveRevision("page-multi", "# Multi\n\nReverted.", "bob");
+        await saveRevision("page-multi", `# Multi\n\n${"x".repeat(1000)} round ${i}`, "alice", undefined, "yopedia");
+        await saveRevision("page-multi", "# Multi\n\nReverted.", "bob", undefined, "yopedia");
       }
 
       const aliceProfile = await buildContributorProfile("alice");
@@ -416,8 +420,8 @@ describe("contributors data layer", () => {
       await createPage("page-list", "List Test", "# List\n\nContent.");
 
       // Alice writes, bob reverts
-      await saveRevision("page-list", "# List\n\n" + "x".repeat(500), "alice");
-      await saveRevision("page-list", "# List\n\nShort.", "bob");
+      await saveRevision("page-list", "# List\n\n" + "x".repeat(500), "alice", undefined, "yopedia");
+      await saveRevision("page-list", "# List\n\nShort.", "bob", undefined, "yopedia");
 
       const contributors = await listContributors();
       const alice = contributors.find(c => c.handle === "alice");
@@ -434,9 +438,9 @@ describe("contributors data layer", () => {
     it("returns profiles for multiple handles in one call", async () => {
       await createPage("page-batch", "Batch", "# Batch\n\nContent.");
 
-      await saveRevision("page-batch", "# Batch\n\nv1", "alice");
-      await saveRevision("page-batch", "# Batch\n\nv2", "alice");
-      await saveRevision("page-batch", "# Batch\n\nv3", "bob");
+      await saveRevision("page-batch", "# Batch\n\nv1", "alice", undefined, "yopedia");
+      await saveRevision("page-batch", "# Batch\n\nv2", "alice", undefined, "yopedia");
+      await saveRevision("page-batch", "# Batch\n\nv3", "bob", undefined, "yopedia");
 
       const profiles = await buildContributorProfiles(["alice", "bob"]);
       expect(profiles).toHaveLength(2);
@@ -460,7 +464,7 @@ describe("contributors data layer", () => {
 
     it("mixes known and unknown handles correctly", async () => {
       await createPage("page-mix", "Mix", "# Mix\n\nContent.");
-      await saveRevision("page-mix", "# Mix\n\nv1", "alice");
+      await saveRevision("page-mix", "# Mix\n\nv1", "alice", undefined, "yopedia");
 
       const profiles = await buildContributorProfiles(["alice", "nobody"]);
       expect(profiles).toHaveLength(2);
@@ -472,8 +476,8 @@ describe("contributors data layer", () => {
 
     it("preserves order matching input handles", async () => {
       await createPage("page-order", "Order", "# Order\n\nContent.");
-      await saveRevision("page-order", "# Order\n\nv1", "zara");
-      await saveRevision("page-order", "# Order\n\nv2", "alice");
+      await saveRevision("page-order", "# Order\n\nv1", "zara", undefined, "yopedia");
+      await saveRevision("page-order", "# Order\n\nv2", "alice", undefined, "yopedia");
 
       const profiles = await buildContributorProfiles(["zara", "alice"]);
       expect(profiles[0].handle).toBe("zara");
@@ -484,8 +488,8 @@ describe("contributors data layer", () => {
   describe("shared scan data — computeScanData", () => {
     it("computes scan data that can be shared across multiple profile builds", async () => {
       await createPage("page-shared", "Shared", "# Shared\n\nContent.");
-      await saveRevision("page-shared", "# Shared\n\nv1", "alice");
-      await saveRevision("page-shared", "# Shared\n\nv2", "bob");
+      await saveRevision("page-shared", "# Shared\n\nv1", "alice", undefined, "yopedia");
+      await saveRevision("page-shared", "# Shared\n\nv2", "bob", undefined, "yopedia");
 
       // Compute scan data once
       const scanData = await computeScanData();
@@ -517,8 +521,8 @@ describe("contributors data layer", () => {
 
     it("shared scan data includes revert detection", async () => {
       await createPage("page-scan-revert", "Scan Revert", "# Scan\n\nContent.");
-      await saveRevision("page-scan-revert", "# Scan\n\n" + "x".repeat(1000), "alice");
-      await saveRevision("page-scan-revert", "# Scan\n\nShort.", "bob");
+      await saveRevision("page-scan-revert", "# Scan\n\n" + "x".repeat(1000), "alice", undefined, "yopedia");
+      await saveRevision("page-scan-revert", "# Scan\n\nShort.", "bob", undefined, "yopedia");
 
       const scanData = await computeScanData();
       const aliceProfile = await buildContributorProfile("alice", scanData);
@@ -528,8 +532,8 @@ describe("contributors data layer", () => {
 
     it("batch profiles with shared scan data match individual builds", async () => {
       await createPage("page-match", "Match", "# Match\n\nContent.");
-      await saveRevision("page-match", "# Match\n\nv1", "alice");
-      await saveRevision("page-match", "# Match\n\nv2", "bob");
+      await saveRevision("page-match", "# Match\n\nv1", "alice", undefined, "yopedia");
+      await saveRevision("page-match", "# Match\n\nv2", "bob", undefined, "yopedia");
 
       const scanData = await computeScanData();
 
@@ -573,9 +577,9 @@ describe("contributors data layer", () => {
     it("trust score for yoyo reflects revert penalties from automation actors", async () => {
       await createPage("page-auto-revert", "Auto Revert", "# Auto\n\nContent.");
       // "system" writes a large revision...
-      await saveRevision("page-auto-revert", "# Auto\n\n" + "x".repeat(1000), "system");
+      await saveRevision("page-auto-revert", "# Auto\n\n" + "x".repeat(1000), "system", undefined, "yopedia");
       // ...then a human substantially shrinks it (>50% reduction = revert).
-      await saveRevision("page-auto-revert", "# Auto\n\nShort.", "alice");
+      await saveRevision("page-auto-revert", "# Auto\n\nShort.", "alice", undefined, "yopedia");
 
       const scanData = await computeScanData();
       // The normalized handle "yoyo" should appear in activityMap (from reduceActivity)

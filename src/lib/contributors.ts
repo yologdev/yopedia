@@ -12,7 +12,7 @@
 // ---------------------------------------------------------------------------
 
 import { getStorage } from "./storage";
-import { listReadableWikiPages, isAgentScopedType } from "./wiki";
+import { listReadableWikiPages, isAgentScopedType, tenantForOwner } from "./wiki";
 import type { Principal } from "./auth";
 import { listRevisions, type Revision } from "./revisions";
 import { getDiscussRelPrefix } from "./talk";
@@ -217,7 +217,7 @@ export async function computeScanData(
   // sequential storage round-trips, twice, the dominant cost on the homepage.
   // Threads load concurrently in the same barrier.
   const [revisionsPerPage, threads] = await Promise.all([
-    Promise.all(pages.map((p) => listRevisions(p.slug))),
+    Promise.all(pages.map((p) => listRevisions(p.slug, tenantForOwner(p.owner)))),
     loadAllThreads(),
   ]);
 

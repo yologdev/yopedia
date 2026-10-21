@@ -70,11 +70,16 @@ afterEach(async () => {
 
 /** Write a page with frontmatter so the revert route can read it.
  *  Defaults to private so the mocked owner can body-write (commons pages
- *  block human body writes after the realm gate). */
+ *  block human body writes after the realm gate).
+ *  Writes to flat path (for readWikiPage fallback) and also to the tenant
+ *  silo (so overwrites create revisions in the tenant path). */
 async function seedPage(slug: string, body: string, owner = "alice") {
   const fm = { title: slug, created: "2025-01-01", updated: "2025-01-01", owner, visibility: "private" };
   const content = serializeFrontmatter(fm, body);
+  // Write flat (so readWikiPage can find it without a page index).
   await writeWikiPage(slug, content);
+  // Write silo (so subsequent overwrites with tenant create revisions there).
+  await writeWikiPage(slug, content, undefined, undefined, owner);
 }
 
 /** Call the POST revert route handler. */
@@ -97,16 +102,16 @@ describe("POST /api/wiki/[slug]/revisions — revert attribution", () => {
     // Seed a page with initial content, then overwrite to create a revision.
     await seedPage("attr-test", "# Attr Test\n\nOriginal content.");
     // Overwrite to create a revision snapshot of the original.
-    await writeWikiPage(
-      "attr-test",
-      serializeFrontmatter(
-        { title: "attr-test", created: "2025-01-01", updated: "2025-01-02", owner: "alice", visibility: "private" },
-        "# Attr Test\n\nUpdated content.",
-      ),
+    const updatedContent = serializeFrontmatter(
+      { title: "attr-test", created: "2025-01-01", updated: "2025-01-02", owner: "alice", visibility: "private" },
+      "# Attr Test\n\nUpdated content.",
     );
+    await writeWikiPage("attr-test", updatedContent, undefined, undefined, "alice");
+    // Keep flat copy in sync so readWikiPageWithFrontmatter finds the page.
+    await writeWikiPage("attr-test", updatedContent);
 
     // The revision of the original should now exist.
-    const revisions = await listRevisions("attr-test");
+    const revisions = await listRevisions("attr-test", "alice");
     expect(revisions.length).toBeGreaterThanOrEqual(1);
     const oldTimestamp = revisions[0].timestamp;
 
@@ -117,11 +122,11 @@ describe("POST /api/wiki/[slug]/revisions — revert attribution", () => {
 
     // The revert creates a new revision (snapshot of the content before revert).
     // Check the newest revision sidecar for the author.
-    const postRevisions = await listRevisions("attr-test");
+    const postRevisions = await listRevisions("attr-test", "alice");
     expect(postRevisions.length).toBeGreaterThan(revisions.length);
     const newestTs = postRevisions[0].timestamp;
 
-    const meta = await readRevisionMeta("attr-test", newestTs);
+    const meta = await readRevisionMeta("attr-test", newestTs, "alice");
     expect(meta).not.toBeNull();
     expect(meta!.author).toBe("alice");
   });
@@ -132,25 +137,25 @@ describe("POST /api/wiki/[slug]/revisions — revert attribution", () => {
     mockedGetServicePrincipal.mockReturnValue({ id: "service:bot", handle: "bot" });
 
     // Seed + overwrite to create a revision.
-    await seedPage("svc-test", "# Svc Test\n\nOriginal.");
-    await writeWikiPage(
-      "svc-test",
-      serializeFrontmatter(
-        { title: "svc-test", created: "2025-01-01", updated: "2025-01-02", owner: "bot" },
-        "# Svc Test\n\nUpdated.",
-      ),
+    await seedPage("svc-test", "# Svc Test\n\nOriginal.", "bot");
+    const updatedContent = serializeFrontmatter(
+      { title: "svc-test", created: "2025-01-01", updated: "2025-01-02", owner: "bot" },
+      "# Svc Test\n\nUpdated.",
     );
+    await writeWikiPage("svc-test", updatedContent, undefined, undefined, "bot");
+    // Keep flat copy in sync so readWikiPageWithFrontmatter finds the page.
+    await writeWikiPage("svc-test", updatedContent);
 
-    const revisions = await listRevisions("svc-test");
+    const revisions = await listRevisions("svc-test", "bot");
     expect(revisions.length).toBeGreaterThanOrEqual(1);
     const oldTimestamp = revisions[0].timestamp;
 
     const res = await callRevert("svc-test", oldTimestamp);
     expect(res.status).toBe(200);
 
-    const postRevisions = await listRevisions("svc-test");
+    const postRevisions = await listRevisions("svc-test", "bot");
     const newestTs = postRevisions[0].timestamp;
-    const meta = await readRevisionMeta("svc-test", newestTs);
+    const meta = await readRevisionMeta("svc-test", newestTs, "bot");
     expect(meta).not.toBeNull();
     expect(meta!.author).toBe("bot");
   });
@@ -158,18 +163,18 @@ describe("POST /api/wiki/[slug]/revisions — revert attribution", () => {
   it("contributor index reflects the reverter's edit", async () => {
     // Seed + overwrite.
     await seedPage("contrib-test", "# Contrib Test\n\nOriginal.");
-    await writeWikiPage(
-      "contrib-test",
-      serializeFrontmatter(
-        { title: "contrib-test", created: "2025-01-01", updated: "2025-01-02", owner: "alice", visibility: "private" },
-        "# Contrib Test\n\nUpdated.",
-      ),
+    const updatedContent = serializeFrontmatter(
+      { title: "contrib-test", created: "2025-01-01", updated: "2025-01-02", owner: "alice", visibility: "private" },
+      "# Contrib Test\n\nUpdated.",
     );
+    await writeWikiPage("contrib-test", updatedContent, undefined, undefined, "alice");
+    // Keep flat copy in sync so readWikiPageWithFrontmatter finds the page.
+    await writeWikiPage("contrib-test", updatedContent);
 
     // Bootstrap a contributor index so recordEditForAuthor has something to update.
     await rebuildContributorIndex();
 
-    const revisions = await listRevisions("contrib-test");
+    const revisions = await listRevisions("contrib-test", "alice");
     const oldTimestamp = revisions[0].timestamp;
 
     // Grab pre-revert state.
