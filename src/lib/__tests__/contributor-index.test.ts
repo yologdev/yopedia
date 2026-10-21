@@ -101,9 +101,9 @@ describe("rebuildContributorIndex + read parity", () => {
   it("rebuild serializes the scan; listContributors fast path == fallback scan", async () => {
     await createPage("p1", "P1", "# P1\n\nbody");
     await createPage("p2", "P2", "# P2\n\nbody");
-    await saveRevision("p1", "# P1\n\nv1", "alice");
-    await saveRevision("p1", "# P1\n\nv2 longer content here", "alice");
-    await saveRevision("p2", "# P2\n\nv1", "bob");
+    await saveRevision("p1", "# P1\n\nv1", "alice", undefined, "yopedia");
+    await saveRevision("p1", "# P1\n\nv2 longer content here", "alice", undefined, "yopedia");
+    await saveRevision("p2", "# P2\n\nv1", "bob", undefined, "yopedia");
     await createThread("p1", "Q", "bob", "a question");
 
     // Fallback: no index yet → listContributors does the full scan.
@@ -123,9 +123,9 @@ describe("rebuildContributorIndex + read parity", () => {
 
   it("profilesFromIndex applies the trust formula and sorts by editCount", async () => {
     await createPage("p1", "P1", "# P1\n\nbody");
-    await saveRevision("p1", "# P1\n\nv1", "alice");
-    await saveRevision("p1", "# P1\n\nv2", "alice");
-    await saveRevision("p1", "# P1\n\nv3", "bob");
+    await saveRevision("p1", "# P1\n\nv1", "alice", undefined, "yopedia");
+    await saveRevision("p1", "# P1\n\nv2", "alice", undefined, "yopedia");
+    await saveRevision("p1", "# P1\n\nv3", "bob", undefined, "yopedia");
     const idx = await rebuildContributorIndex();
     const profiles = profilesFromIndex(idx);
     // alice has more edits → sorts first.

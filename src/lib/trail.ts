@@ -233,7 +233,7 @@ export async function trailEventsForPages(
       // stat, and capped to the most recent MAX_REVISIONS_PER_PAGE per page (the
       // trail's dominant cost was reading every revision of every scanned page).
       try {
-        const revisions = await listRevisionAuthors(page.slug, MAX_REVISIONS_PER_PAGE);
+        const revisions = await listRevisionAuthors(page.slug, MAX_REVISIONS_PER_PAGE, ownerToTenant(page.owner));
         for (const r of revisions) {
           if (!r.author) continue;
           const actor = normalizeActor(r.author);

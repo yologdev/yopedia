@@ -871,9 +871,9 @@ describe("realm-aware ACL — discussion and revision-revert routes", () => {
     await seed("alice-own-revert", { owner: "alice", visibility: "private" });
     // Create a revision so the revert has something to restore.
     const { saveRevision } = await import("@/lib/revisions");
-    await saveRevision("alice-own-revert", "# alice-own-revert\n\nOld content.");
+    await saveRevision("alice-own-revert", "# alice-own-revert\n\nOld content.", undefined, undefined, "alice");
     const { listRevisions } = await import("@/lib/revisions");
-    const revs = await listRevisions("alice-own-revert");
+    const revs = await listRevisions("alice-own-revert", "alice");
     expect(revs.length).toBeGreaterThan(0);
 
     mockedGetPrincipal.mockResolvedValueOnce({ id: "u_alice", handle: "alice" });
@@ -884,9 +884,9 @@ describe("realm-aware ACL — discussion and revision-revert routes", () => {
   it("allows a service principal to revert a private page", async () => {
     await seed("svc-priv-revert", { owner: "alice", visibility: "private" });
     const { saveRevision } = await import("@/lib/revisions");
-    await saveRevision("svc-priv-revert", "# svc-priv-revert\n\nOld content.");
+    await saveRevision("svc-priv-revert", "# svc-priv-revert\n\nOld content.", undefined, undefined, "alice");
     const { listRevisions } = await import("@/lib/revisions");
-    const revs = await listRevisions("svc-priv-revert");
+    const revs = await listRevisions("svc-priv-revert", "alice");
     expect(revs.length).toBeGreaterThan(0);
 
     // Simulate a service principal — getPrincipal returns null, but
@@ -904,9 +904,9 @@ describe("realm-aware ACL — discussion and revision-revert routes", () => {
     // Reverts replace the body — same realm gate as PUT.
     await seed("pub-revert", { owner: "alice", visibility: "public" });
     const { saveRevision } = await import("@/lib/revisions");
-    await saveRevision("pub-revert", "# pub-revert\n\nOld content.");
+    await saveRevision("pub-revert", "# pub-revert\n\nOld content.", undefined, undefined, "alice");
     const { listRevisions } = await import("@/lib/revisions");
-    const revs = await listRevisions("pub-revert");
+    const revs = await listRevisions("pub-revert", "alice");
     expect(revs.length).toBeGreaterThan(0);
 
     const res = await postRevert("pub-revert", revs[0].timestamp);
