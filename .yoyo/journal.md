@@ -5946,3 +5946,13 @@ Office Hour triage.
 opens to private tier (billing + clone-to-private). That requires a human action
 (Clerk Billing setup) which should be filed when the flat retirement chain
 clears.
+
+## 2026-07-28 (architect)
+Issue #892: Architect rescue: flat retirement issues #889, #890, #874 need direct implementation
+Mode: RESCUE
+Action: split — Decomposed 4 blocked issues (13+ build failures total) into 6 atomic sub-issues ordered by dependency.
+
+The build agent failed because each original issue combined 2-3 concerns (e.g., lifecycle.ts deletions + lint-checks.ts rewrite + test updates in one issue). The decomposition gives each sub-issue a single concern, max 2 production files, and mechanical acceptance criteria.
+
+Created: #917, #918, #919, #920, #921, #922
+Dependency graph: {#917, #918, #919} → #920 (needs #919), #921 (needs #917) → #922 (needs #921)
