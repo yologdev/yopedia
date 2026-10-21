@@ -376,8 +376,8 @@ async function runPageLifecycleOp(
   });
 
   // 3b. Mirror into the commons index (tenant-silos groundwork). Maintained
-  //     alongside the flat index; not yet read by any surface. Fail-soft — a
-  //     commons error must never break the page write/delete.
+  //     alongside the flat index and read by homepage, browse, and graph.
+  //     Fail-soft — a commons error must never break the page write/delete.
   try {
     if (op.kind === "delete") {
       await removeCommonsEntryBySlug(slug);
