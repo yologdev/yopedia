@@ -10,7 +10,7 @@ import {
   MCP_SERVER_INFO,
   _internal,
 } from "../mcp-http";
-import { ensureDirectories, writeWikiPage } from "../wiki";
+import { ensureDirectories, writeWikiPage, tenantForOwner } from "../wiki";
 import { saveRevision } from "../revisions";
 import { _resetStorage } from "../storage";
 import { createVault, vaultSlugs } from "../vault";
@@ -815,7 +815,7 @@ describe("dispatchMcp — list_revisions", () => {
   it("returns revisions for a valid slug without auth (read-only)", async () => {
     // Create a page then update it so a revision exists
     await writeWikiPage("rev-list-test", "# Rev\nOriginal content");
-    await saveRevision("rev-list-test", "# Rev\nOriginal content");
+    await saveRevision("rev-list-test", "# Rev\nOriginal content", undefined, undefined, tenantForOwner(undefined));
     await writeWikiPage("rev-list-test", "# Rev\nUpdated content");
     const res = await dispatchMcp(
       {
@@ -843,7 +843,7 @@ describe("dispatchMcp — read_revision", () => {
   it("returns revision content for a valid slug + timestamp without auth", async () => {
     // Set up a page with a revision
     await writeWikiPage("rev-read-test", "# Rev\nFirst version");
-    await saveRevision("rev-read-test", "# Rev\nFirst version");
+    await saveRevision("rev-read-test", "# Rev\nFirst version", undefined, undefined, tenantForOwner(undefined));
     await writeWikiPage("rev-read-test", "# Rev\nSecond version");
 
     // Get the timestamp from list_revisions
@@ -904,7 +904,7 @@ describe("dispatchMcp — revert_revision", () => {
   it("passes principal.handle as author to handleRevertRevision", async () => {
     // Create a page with a revision to revert to
     await writeWikiPage("rev-revert-test", "# Revert\nOriginal");
-    await saveRevision("rev-revert-test", "# Revert\nOriginal");
+    await saveRevision("rev-revert-test", "# Revert\nOriginal", undefined, undefined, tenantForOwner(undefined));
     await writeWikiPage("rev-revert-test", "# Revert\nChanged");
 
     // Get the timestamp
