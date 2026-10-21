@@ -58,9 +58,9 @@ describe("dispatchMcp — protocol", () => {
     });
   });
 
-  it("ping returns an empty result", async () => {
+  it("ping returns an empty result (with v2 envelope)", async () => {
     const res = await dispatchMcp({ id: 2, method: "ping" }, null);
-    expect(res!.result).toEqual({});
+    expect(res!.result).toMatchObject({ resultType: "complete" });
   });
 
   it("notifications get no response (null)", async () => {
