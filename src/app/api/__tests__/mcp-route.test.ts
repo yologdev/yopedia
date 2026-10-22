@@ -182,3 +182,45 @@ describe("POST /api/mcp — transport", () => {
     expect((await res.json()).error.code).toBe(-32000);
   });
 });
+
+describe("POST /api/mcp — MCP v2 protocol", () => {
+  it("server/discover returns supported versions and capabilities", async () => {
+    const res = await POST(post({ id: 1, method: "server/discover" }));
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.result.supportedVersions).toContain("2026-07-28");
+    expect(body.result.supportedVersions).toContain("2025-06-18");
+    expect(body.result.capabilities).toEqual({ tools: {} });
+    expect(body.result.resultType).toBe("complete");
+  });
+
+  it("all responses include resultType: complete", async () => {
+    const res = await POST(post({ id: 1, method: "tools/list" }));
+    const body = await res.json();
+    expect(body.result.resultType).toBe("complete");
+  });
+
+  it("tools/list includes CacheableResult fields", async () => {
+    const res = await POST(post({ id: 1, method: "tools/list" }));
+    const body = await res.json();
+    expect(body.result.ttlMs).toBe(3600000);
+    expect(body.result.cacheScope).toBe("public");
+  });
+
+  it("responses include server info in _meta", async () => {
+    const res = await POST(post({ id: 1, method: "tools/list" }));
+    const body = await res.json();
+    expect(body.result._meta["io.modelcontextprotocol/serverInfo"]).toEqual({
+      name: "yopedia",
+      version: "1.0.0",
+    });
+  });
+
+  it("initialize still works for v1 backward compat", async () => {
+    const res = await POST(post({ id: 1, method: "initialize" }));
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.result.protocolVersion).toBe("2026-07-28");
+    expect(body.result.resultType).toBe("complete");
+  });
+});

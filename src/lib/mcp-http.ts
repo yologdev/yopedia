@@ -4,7 +4,9 @@
  * same tools to external agents (Claude Desktop/Code, Cursor, OpenClaw) over
  * HTTP so they can read and ingest into a DEPLOYED instance.
  *
- * Transport: Streamable-HTTP in **stateless** mode — each POST is one
+ * Transport: Streamable-HTTP in **stateless** mode — supports both MCP v1
+ * (initialize/initialized handshake) and v2 (2026-07-28 spec: server/discover,
+ * per-request _meta, resultType) during the transition period. Each POST is one
  * self-contained JSON-RPC message (no SSE, no session). That's the only viable
  * shape on this stack (Cloudflare Workers, no Durable Objects for the SDK's
  * session-backed transport), and it's enough for `initialize` → `tools/list` →
@@ -83,7 +85,7 @@ export interface TargetVault {
 }
 
 /** Protocol version we advertise in `initialize`. */
-export const MCP_PROTOCOL_VERSION = "2025-06-18";
+export const MCP_PROTOCOL_VERSION = "2026-07-28";
 export const MCP_SERVER_INFO = { name: "yopedia", version: "1.0.0" } as const;
 
 // ---------------------------------------------------------------------------
@@ -105,7 +107,21 @@ export interface JsonRpcResponse {
 }
 
 function ok(id: JsonRpcRequest["id"], result: unknown): JsonRpcResponse {
-  return { jsonrpc: "2.0", id: id ?? null, result };
+  const r = result && typeof result === "object"
+    ? (result as Record<string, unknown>)
+    : {};
+  return {
+    jsonrpc: "2.0",
+    id: id ?? null,
+    result: {
+      ...r,
+      resultType: "complete",
+      _meta: {
+        "io.modelcontextprotocol/serverInfo": MCP_SERVER_INFO,
+        ...(r._meta as Record<string, unknown> ?? {}),
+      },
+    },
+  };
 }
 function rpcError(
   id: JsonRpcRequest["id"],
@@ -1109,6 +1125,18 @@ export async function dispatchMcp(
 ): Promise<JsonRpcResponse | null> {
   const { id, method } = msg;
   switch (method) {
+    case "server/discover":
+      return ok(id, {
+        supportedVersions: [MCP_PROTOCOL_VERSION, "2025-06-18"],
+        capabilities: { tools: {} },
+        _meta: {
+          "io.modelcontextprotocol/serverInfo": MCP_SERVER_INFO,
+        },
+        instructions: targetVault
+          ? `Pages you save are filed into the user's "${targetVault.name}" vault, attributed to the user.`
+          : "yopedia wiki — search, read, ingest, and query knowledge pages.",
+      });
+    // DEPRECATED in v2 spec (2026-07-28); kept for v1 backward compat.
     case "initialize": {
       // Tell the connecting agent where its saves land (the user configured a
       // target vault for this agent) — prompt-level transparency; the server
@@ -1126,6 +1154,7 @@ export async function dispatchMcp(
     case "notifications/initialized":
     case "notifications/cancelled":
       return null; // notifications get no response
+    // DEPRECATED: removed in v2 spec (2026-07-28). Kept for v1 backward compat.
     case "ping":
       return ok(id, {});
     case "tools/list": {
@@ -1136,7 +1165,8 @@ export async function dispatchMcp(
         const d = toolDescriptor(t);
         return t.write && suffix ? { ...d, description: d.description + suffix } : d;
       });
-      return ok(id, { tools });
+      // v2 spec: CacheableResult — tool list is static per deployment
+      return ok(id, { tools, ttlMs: 3600000, cacheScope: "public" });
     }
     case "tools/call": {
       const params = (msg.params ?? {}) as {
