@@ -6,10 +6,100 @@ import { enforceRateLimit } from "@/lib/rate-limit";
 import {
   dispatchMcp,
   MCP_MAX_BATCH,
+  MCP_PROTOCOL_VERSION,
   type JsonRpcRequest,
+  type JsonRpcResponse,
   type TargetVault,
 } from "@/lib/mcp-http";
 import { logger } from "@/lib/logger";
+
+/** MCP v2 spec error codes (2026-07-28). */
+const MCP_HEADER_MISMATCH = -32020;
+const MCP_UNSUPPORTED_VERSION = -32022;
+
+/** Supported protocol versions — latest first, plus the prior spec for compat. */
+const SUPPORTED_VERSIONS = [MCP_PROTOCOL_VERSION, "2025-06-18"];
+
+/**
+ * Validate v2 MCP headers and `_meta`. Returns a JSON-RPC error response if
+ * invalid, or `null` if valid (or v1 client without the version header).
+ *
+ * Dual-version strategy: if `MCP-Protocol-Version` header is absent → v1
+ * client, skip all v2 validations. If present → enforce v2 requirements.
+ */
+function validateV2Request(
+  req: Request,
+  body: JsonRpcRequest,
+): JsonRpcResponse | null {
+  const headerVersion = req.headers.get("mcp-protocol-version");
+
+  // No version header → v1 client, skip v2 validation entirely.
+  if (!headerVersion) return null;
+
+  // Check supported version.
+  if (!SUPPORTED_VERSIONS.includes(headerVersion)) {
+    return {
+      jsonrpc: "2.0",
+      id: body.id ?? null,
+      error: {
+        code: MCP_UNSUPPORTED_VERSION,
+        message: `Unsupported protocol version: ${headerVersion}. Supported: ${SUPPORTED_VERSIONS.join(", ")}`,
+      },
+    };
+  }
+
+  // Validate Mcp-Method header matches body.method.
+  const headerMethod = req.headers.get("mcp-method");
+  if (headerMethod && body.method && headerMethod !== body.method) {
+    return {
+      jsonrpc: "2.0",
+      id: body.id ?? null,
+      error: {
+        code: MCP_HEADER_MISMATCH,
+        message: `Mcp-Method header "${headerMethod}" does not match body method "${body.method}"`,
+      },
+    };
+  }
+
+  // Validate Mcp-Name header for tools/call.
+  if (body.method === "tools/call") {
+    const headerName = req.headers.get("mcp-name");
+    const bodyName = (body.params as { name?: string } | undefined)?.name;
+    if (headerName && bodyName && headerName !== bodyName) {
+      return {
+        jsonrpc: "2.0",
+        id: body.id ?? null,
+        error: {
+          code: MCP_HEADER_MISMATCH,
+          message: `Mcp-Name header "${headerName}" does not match params.name "${bodyName}"`,
+        },
+      };
+    }
+  }
+
+  return null;
+}
+
+/** Version-only check — used for batch requests where per-message headers
+ *  (Mcp-Method, Mcp-Name) don't apply. */
+function validateV2Version(
+  req: Request,
+  body: JsonRpcRequest,
+): JsonRpcResponse | null {
+  const headerVersion = req.headers.get("mcp-protocol-version");
+  if (!headerVersion) return null;
+  if (!SUPPORTED_VERSIONS.includes(headerVersion)) {
+    return {
+      jsonrpc: "2.0",
+      id: body.id ?? null,
+      error: {
+        code: MCP_UNSUPPORTED_VERSION,
+        message: `Unsupported protocol version: ${headerVersion}. Supported: ${SUPPORTED_VERSIONS.join(", ")}`,
+      },
+    };
+  }
+  return null;
+}
 
 /**
  * Remote (HTTP) MCP endpoint — stateless Streamable-HTTP JSON-RPC. External
@@ -132,6 +222,12 @@ export async function POST(req: Request) {
           { status: 400 },
         );
       }
+      // v2 version validation applies to the whole batch (headers are
+      // per-request). Per-message headers (Mcp-Method, Mcp-Name) don't
+      // apply to batches since they can only describe a single message.
+      const versionError = validateV2Version(req, (body[0] ?? PARSE_ERROR) as JsonRpcRequest);
+      if (versionError) return NextResponse.json(versionError, { status: 400 });
+
       const responses = (
         await Promise.all(
           body.map((m) =>
@@ -143,6 +239,10 @@ export async function POST(req: Request) {
       if (responses.length === 0) return new NextResponse(null, { status: 202 });
       return NextResponse.json(responses);
     }
+
+    // v2 header + meta validation (single message).
+    const v2err = validateV2Request(req, (body ?? PARSE_ERROR) as JsonRpcRequest);
+    if (v2err) return NextResponse.json(v2err, { status: 400 });
 
     const res = await dispatchMcp(
       (body ?? PARSE_ERROR) as JsonRpcRequest,
