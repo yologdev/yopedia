@@ -224,3 +224,173 @@ describe("POST /api/mcp — MCP v2 protocol", () => {
     expect(body.result.resultType).toBe("complete");
   });
 });
+
+describe("POST /api/mcp — v2 header validation", () => {
+  it("skips validation when MCP-Protocol-Version header is absent (v1 client)", async () => {
+    const res = await POST(post({ id: 1, method: "tools/list" }));
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.result.tools.length).toBeGreaterThan(0);
+  });
+
+  it("passes validation with the current protocol version", async () => {
+    const res = await POST(
+      post({ id: 1, method: "tools/list" }, { "MCP-Protocol-Version": "2026-07-28" }),
+    );
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.result.tools.length).toBeGreaterThan(0);
+  });
+
+  it("passes validation with the backward-compat version 2025-06-18", async () => {
+    const res = await POST(
+      post({ id: 1, method: "tools/list" }, { "MCP-Protocol-Version": "2025-06-18" }),
+    );
+    expect(res.status).toBe(200);
+  });
+
+  it("rejects an unsupported protocol version with -32022", async () => {
+    const res = await POST(
+      post(
+        { id: 1, method: "tools/list" },
+        { "MCP-Protocol-Version": "1999-01-01" },
+      ),
+    );
+    expect(res.status).toBe(400);
+    const body = await res.json();
+    expect(body.error.code).toBe(-32022);
+    expect(body.error.message).toContain("Unsupported protocol version");
+    expect(body.error.message).toContain("1999-01-01");
+  });
+
+  it("rejects mismatched Mcp-Method header with -32020", async () => {
+    const res = await POST(
+      post(
+        { id: 1, method: "tools/list" },
+        { "MCP-Protocol-Version": "2026-07-28", "Mcp-Method": "tools/call" },
+      ),
+    );
+    expect(res.status).toBe(400);
+    const body = await res.json();
+    expect(body.error.code).toBe(-32020);
+    expect(body.error.message).toContain("Mcp-Method");
+    expect(body.error.message).toContain("tools/call");
+    expect(body.error.message).toContain("tools/list");
+  });
+
+  it("passes when Mcp-Method header matches body method", async () => {
+    const res = await POST(
+      post(
+        { id: 1, method: "tools/list" },
+        { "MCP-Protocol-Version": "2026-07-28", "Mcp-Method": "tools/list" },
+      ),
+    );
+    expect(res.status).toBe(200);
+  });
+
+  it("ignores Mcp-Method when header is absent (optional)", async () => {
+    const res = await POST(
+      post(
+        { id: 1, method: "tools/list" },
+        { "MCP-Protocol-Version": "2026-07-28" },
+      ),
+    );
+    expect(res.status).toBe(200);
+  });
+
+  it("rejects mismatched Mcp-Name header on tools/call with -32020", async () => {
+    mockedVerify.mockResolvedValue("alice--yoyo");
+    mockedGetAgent.mockResolvedValue({ owner: "alice" } as Awaited<ReturnType<typeof getAgent>>);
+
+    const res = await POST(
+      post(
+        {
+          id: 1,
+          method: "tools/call",
+          params: { name: "search_wiki", arguments: { query: "test" } },
+        },
+        {
+          Authorization: "Bearer t",
+          "MCP-Protocol-Version": "2026-07-28",
+          "Mcp-Name": "read_page",
+        },
+      ),
+    );
+    expect(res.status).toBe(400);
+    const body = await res.json();
+    expect(body.error.code).toBe(-32020);
+    expect(body.error.message).toContain("Mcp-Name");
+    expect(body.error.message).toContain("read_page");
+    expect(body.error.message).toContain("search_wiki");
+  });
+
+  it("passes when Mcp-Name matches params.name on tools/call", async () => {
+    const res = await POST(
+      post(
+        {
+          id: 1,
+          method: "tools/call",
+          params: { name: "search_wiki", arguments: { query: "test" } },
+        },
+        {
+          "MCP-Protocol-Version": "2026-07-28",
+          "Mcp-Name": "search_wiki",
+        },
+      ),
+    );
+    expect(res.status).toBe(200);
+  });
+
+  it("Mcp-Name is ignored for non-tools/call methods", async () => {
+    const res = await POST(
+      post(
+        { id: 1, method: "tools/list" },
+        { "MCP-Protocol-Version": "2026-07-28", "Mcp-Name": "anything" },
+      ),
+    );
+    expect(res.status).toBe(200);
+  });
+
+  it("unsupported version is rejected even in batch requests", async () => {
+    const batch = [{ id: 1, method: "ping" }, { id: 2, method: "tools/list" }];
+    const res = await POST(
+      post(batch, { "MCP-Protocol-Version": "1999-01-01" }),
+    );
+    expect(res.status).toBe(400);
+    const body = await res.json();
+    expect(body.error.code).toBe(-32022);
+  });
+
+  it("batch with valid v2 version header proceeds normally", async () => {
+    const batch = [{ id: 1, method: "ping" }, { id: 2, method: "tools/list" }];
+    const res = await POST(
+      post(batch, { "MCP-Protocol-Version": "2026-07-28" }),
+    );
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(Array.isArray(body)).toBe(true);
+    expect(body).toHaveLength(2);
+  });
+
+  it("preserves request id in error responses", async () => {
+    const res = await POST(
+      post(
+        { id: 42, method: "tools/list" },
+        { "MCP-Protocol-Version": "0000-00-00" },
+      ),
+    );
+    const body = await res.json();
+    expect(body.id).toBe(42);
+  });
+
+  it("uses null id when body has no id", async () => {
+    const res = await POST(
+      post(
+        { method: "tools/list" },
+        { "MCP-Protocol-Version": "0000-00-00" },
+      ),
+    );
+    const body = await res.json();
+    expect(body.id).toBeNull();
+  });
+});
