@@ -11,6 +11,7 @@ import {
   _internal,
 } from "../mcp-http";
 import { ensureDirectories, writeWikiPage, tenantForOwner } from "../wiki";
+import { syncPageIndexForPage } from "../page-index";
 import { saveRevision } from "../revisions";
 import { _resetStorage } from "../storage";
 import { createVault, vaultSlugs } from "../vault";
@@ -384,7 +385,8 @@ describe("dispatchMcp — delete_page", () => {
     // Use agent-scoped type so the page is NOT commons (commons delete writes
     // require a service principal — the realm gate is intentional).
     const fm = { title: "Delete Test", owner: "alice", created: "2025-01-01", type: "agent-knowledge" };
-    await writeWikiPage("delete-test", serializeFrontmatter(fm, "# Delete Test\n\nWill be deleted."));
+    await writeWikiPage("delete-test", serializeFrontmatter(fm, "# Delete Test\n\nWill be deleted."), undefined, undefined, tenantForOwner("alice"));
+    await syncPageIndexForPage({ slug: "delete-test", title: "Delete Test", owner: "alice", type: "agent-knowledge" } as import("../types").IndexEntry);
 
     // Confirm the page exists.
     expect(await readWikiPage("delete-test")).toBeTruthy();

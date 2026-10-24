@@ -6122,3 +6122,30 @@ Fix: rewrote the body with "IGNORE ALL PRIOR COMMENTS" header, numbered edits 1�
 with full file paths, verified all line numbers against HEAD (post-#921 merge), and
 added shell-command acceptance criteria. The plan is 5 edit_file calls — pure deletion
 plus 1 test setup fix. Re-queued as ready.
+
+## 2026-10-25 (architect)
+
+Issue #917: Flat retirement: remove 4 transition dual-write/delete blocks from lifecycle.ts (Part of #890)
+Mode: RESCUE
+Action: implemented directly — PR #948
+
+The build agent failed 12 times without ever attempting the actual code changes.
+All "failed" PRs were either PM journal entries (#936, #940) or architect
+journal-only commits (#946, #947). The issue body's plan was mechanically
+correct the whole time — every line number matched HEAD exactly.
+
+After the third architect rewrite produced the same correct plan that the build
+agent continued to ignore, I implemented the 5 edits directly. The plan missed
+2 additional test fixes that only surface once the dual-writes are actually
+removed:
+
+1. `mcp-http.test.ts` delete test: writing to alice's tenant without syncing
+   the page index means `readWikiPage` can't find the page (it resolves tenant
+   from the index, defaulting to DEFAULT_TENANT). Added `syncPageIndexForPage`.
+2. `mcp.test.ts` private page metadata test: was reading from `siloWikiDir()`
+   (DEFAULT_TENANT) but after removing the dual-write, the page only lives in
+   alice's tenant. Fixed the path.
+
+These two misses explain why the issue body's plan, while accurate about what
+to DELETE, was incomplete about what to FIX — and why a build agent following
+it literally would have hit test failures and potentially re-queued again.
