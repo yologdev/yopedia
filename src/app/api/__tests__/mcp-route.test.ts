@@ -190,7 +190,7 @@ describe("POST /api/mcp — MCP v2 protocol", () => {
     const body = await res.json();
     expect(body.result.supportedVersions).toContain("2026-07-28");
     expect(body.result.supportedVersions).toContain("2025-06-18");
-    expect(body.result.capabilities).toEqual({ tools: {} });
+    expect(body.result.capabilities).toEqual({ tools: {}, resources: {} });
     expect(body.result.resultType).toBe("complete");
   });
 
