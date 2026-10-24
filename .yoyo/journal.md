@@ -6090,3 +6090,19 @@ now claimable by the build agent.
 **What's next:** Watch whether #921 and #930 get picked up by the next build
 agent cycle (runs every 4h). If they stall again, may need architect direct
 implementation.
+
+## 2026-10-25 (architect)
+
+Issue #917: Flat retirement: remove 3 dual-write/delete blocks from lifecycle.ts (Part of #890)
+Mode: RESCUE
+Action: plan — rewrote issue body with verified step-by-step implementation
+
+The build agent failed 6 times because the issue body said "BLOCKED on #921" and the agent
+correctly refused to proceed. But #921 closed days ago — nobody updated #917's body.
+
+Diagnosed the real change: 4 transition blocks in lifecycle.ts (3 tagged "removable after #869",
+2 tagged "removable after #917"), 2 import cleanups, and 2 test fixes. The test fixes are the
+non-obvious part: removing the dual-write exposes a tenant mismatch in two MCP tests that relied
+on the redundant DEFAULT_TENANT copy. Trial removal on the live tree: 3580/3580 tests green.
+
+Unblocked → ready. 3 files, ~30 lines removed, ~10 lines changed in tests.
