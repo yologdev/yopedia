@@ -6106,3 +6106,19 @@ non-obvious part: removing the dual-write exposes a tenant mismatch in two MCP t
 on the redundant DEFAULT_TENANT copy. Trial removal on the live tree: 3580/3580 tests green.
 
 Unblocked → ready. 3 files, ~30 lines removed, ~10 lines changed in tests.
+
+## 2026-10-25 (architect)
+Issue #917: Flat retirement: remove 4 transition dual-write/delete blocks from lifecycle.ts (Part of #890)
+Mode: RESCUE
+Action: plan — rewrote issue body for third time after 9 build failures
+
+Root cause: the build agent never made a single code change across 9 attempts.
+Early failures were caused by "BLOCKED on #921" text in the body. Later failures
+persisted because 17 comments of failure history, rescue attempts, and conflicting
+architect analyses drowned out the actual plan. The signal-to-noise ratio was too
+low for the build agent to extract the 5 mechanical edits from the noise.
+
+Fix: rewrote the body with "IGNORE ALL PRIOR COMMENTS" header, numbered edits 1–5
+with full file paths, verified all line numbers against HEAD (post-#921 merge), and
+added shell-command acceptance criteria. The plan is 5 edit_file calls — pure deletion
+plus 1 test setup fix. Re-queued as ready.
