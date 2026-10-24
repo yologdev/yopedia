@@ -167,10 +167,10 @@ describe("searchWikiContent", () => {
       "broken-note",
       '---\ntags: [a, "b, c]\n---\n\n# Broken Note\n\nAttention mechanisms explained here.',
     );
-    await writeWikiPage(
-      "index",
-      "# Index\n\n- [Good Note](good-note.md) — g\n- [Broken Note](broken-note.md) — b",
-    );
+    await updateIndex([
+      { slug: "good-note", title: "Good Note", summary: "g" },
+      { slug: "broken-note", title: "Broken Note", summary: "b" },
+    ]);
 
     const slugs = (await searchWikiContent("attention")).map((r) => r.slug);
     expect(slugs).toContain("good-note");
@@ -189,10 +189,10 @@ describe("searchWikiContent", () => {
       "broken-fuzzy",
       '---\ntags: [a, "b, c]\n---\n\n# Broken Fuzzy\n\nAttnetion mechanisms explained here.',
     );
-    await writeWikiPage(
-      "index",
-      "# Index\n\n- [Good Fuzzy](good-fuzzy.md) — g\n- [Broken Fuzzy](broken-fuzzy.md) — b",
-    );
+    await updateIndex([
+      { slug: "good-fuzzy", title: "Good Fuzzy", summary: "g" },
+      { slug: "broken-fuzzy", title: "Broken Fuzzy", summary: "b" },
+    ]);
 
     const slugs = (await fuzzySearchWikiContent("attention")).map((r) => r.slug);
     expect(slugs).toContain("good-fuzzy");
@@ -213,10 +213,10 @@ describe("searchWikiContent", () => {
       ),
     );
     // Both must be in the index so the type-based exclusion can see them.
-    await writeWikiPage(
-      "index",
-      "# Index\n\n- [Normal](normal-note.md) — n\n- [Agent Note](agent-note.md) — a",
-    );
+    await updateIndex([
+      { slug: "normal-note", title: "Normal", summary: "n" },
+      { slug: "agent-note", title: "Agent Note", summary: "a" },
+    ]);
 
     const slugs = (await searchWikiContent("attention")).map((r) => r.slug);
     expect(slugs).toContain("normal-note");
@@ -243,10 +243,11 @@ describe("searchWikiContent", () => {
         "# Deck X\n\nAttention mechanisms explained here.",
       ),
     );
-    await writeWikiPage(
-      "index",
-      "# Index\n\n- [Note](note-x.md) — n\n- [Artifact](artifact-x.md) — a\n- [Deck](deck-x.md) — d",
-    );
+    await updateIndex([
+      { slug: "note-x", title: "Note", summary: "n" },
+      { slug: "artifact-x", title: "Artifact", summary: "a" },
+      { slug: "deck-x", title: "Deck", summary: "d" },
+    ]);
     // All slugs are in the scope (as if a vault curated the artifacts), but the
     // artifacts (html AND slides) must still NOT surface as search hits.
     const scope = { agentId: "vault:v1", slugs: ["note-x", "artifact-x", "deck-x"] };
@@ -267,7 +268,7 @@ describe("searchWikiContent", () => {
         "# AK\n\nAttention mechanisms explained here.",
       ),
     );
-    await writeWikiPage("index", "# Index\n\n- [AK](ak.md) — a");
+    await updateIndex([{ slug: "ak", title: "AK", summary: "a" }]);
     // Unscoped: agent-scoped page excluded.
     expect((await searchWikiContent("attention")).map((r) => r.slug)).not.toContain("ak");
     // Scoped (the agent's own lens): it MUST surface — guards the scope-aware
@@ -772,9 +773,9 @@ describe("updateRelatedPages", () => {
 
     await updateRelatedPages("source-page", "Source Page", ["target-page"]);
 
-    const revs = await listRevisions("target-page");
+    const revs = await listRevisions("target-page", "yopedia");
     expect(revs.length).toBeGreaterThanOrEqual(1);
-    const meta = await readRevisionMeta("target-page", revs[0].timestamp);
+    const meta = await readRevisionMeta("target-page", revs[0].timestamp, "yopedia");
     expect(meta).not.toBeNull();
     expect(meta!.author).toBe("system");
   });
@@ -1362,7 +1363,7 @@ describe("resolveScopeSlugs", () => {
       "alice-pg",
       serializeFrontmatter({ owner: "alice" }, "# A\n\nbody"),
     );
-    await writeWikiPage("index", "# Index\n\n- [A](alice-pg.md) — body");
+    await updateIndex([{ slug: "alice-pg", title: "A", summary: "body" }]);
     const r = await resolveScopeSlugs("mine", alice);
     expect(r.error).toBeUndefined();
     expect(r.scopeSlugs).toEqual(["alice-pg"]);

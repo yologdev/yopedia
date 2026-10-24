@@ -411,9 +411,9 @@ describe("deleteWikiPage", () => {
 
     await deleteWikiPage("gone-page");
 
-    const revs = await listRevisions("linker2");
+    const revs = await listRevisions("linker2", "yopedia");
     expect(revs.length).toBeGreaterThanOrEqual(1);
-    const meta = await readRevisionMeta("linker2", revs[0].timestamp);
+    const meta = await readRevisionMeta("linker2", revs[0].timestamp, "yopedia");
     expect(meta).not.toBeNull();
     expect(meta!.author).toBe("system");
     expect(meta!.reason).toBe("backlink strip");

@@ -164,9 +164,15 @@ afterEach(async () => {
 // Helper — write wiki pages and index
 // ---------------------------------------------------------------------------
 
+/** Where MCP writes land after flat retirement — DEFAULT_TENANT silo. */
+function siloWikiDir(): string {
+  return path.join(tmpDir, "tenants", "yopedia", "wiki");
+}
 async function writeTestPage(slug: string, content: string): Promise<void> {
+  const dir = path.join(tmpDir, "tenants", "yopedia", "wiki");
+  await fs.mkdir(dir, { recursive: true });
   await fs.writeFile(
-    path.join(tmpDir, "wiki", `${slug}.md`),
+    path.join(dir, `${slug}.md`),
     content,
     "utf-8",
   );
@@ -462,7 +468,7 @@ describe("MCP write tools", () => {
       expect(result.created).toBe(true);
 
       // Verify file exists on disk with frontmatter
-      const filePath = path.join(tmpDir, "wiki", "test-create.md");
+      const filePath = path.join(siloWikiDir(), "test-create.md");
       const fileContent = await fs.readFile(filePath, "utf-8");
       expect(fileContent).toContain("---");
       expect(fileContent).toContain("title: Test");
@@ -476,7 +482,7 @@ describe("MCP write tools", () => {
         content: "# Schema Test\n\nBody.",
       });
 
-      const filePath = path.join(tmpDir, "wiki", "schema-check.md");
+      const filePath = path.join(siloWikiDir(), "schema-check.md");
       const fileContent = await fs.readFile(filePath, "utf-8");
       const { data: frontmatter } = parseFrontmatter(fileContent);
 
@@ -536,7 +542,7 @@ describe("MCP write tools", () => {
         tags: ["science", "ai"],
       });
 
-      const filePath = path.join(tmpDir, "wiki", "tagged-page.md");
+      const filePath = path.join(siloWikiDir(), "tagged-page.md");
       const fileContent = await fs.readFile(filePath, "utf-8");
       const { data: frontmatter } = parseFrontmatter(fileContent);
       expect(frontmatter.tags).toEqual(["science", "ai"]);
@@ -548,7 +554,7 @@ describe("MCP write tools", () => {
         content: "# No Tags\n\nBody.",
       });
 
-      const filePath = path.join(tmpDir, "wiki", "no-tags-page.md");
+      const filePath = path.join(siloWikiDir(), "no-tags-page.md");
       const fileContent = await fs.readFile(filePath, "utf-8");
       const { data: frontmatter } = parseFrontmatter(fileContent);
       expect(frontmatter.tags).toEqual([]);
@@ -584,7 +590,7 @@ describe("MCP write tools", () => {
       expect(result.created).toBe(true);
       expect(result.title).toBe("Created Page");
 
-      const filePath = path.join(tmpDir, "wiki", "double-fm-create.md");
+      const filePath = path.join(siloWikiDir(), "double-fm-create.md");
       const fileContent = await fs.readFile(filePath, "utf-8");
 
       // Count frontmatter delimiters — exactly one block (opening + closing = 2)
@@ -619,7 +625,7 @@ describe("MCP write tools", () => {
       expect(result.updated).toBe(true);
 
       // Verify file on disk has new content
-      const filePath = path.join(tmpDir, "wiki", "update-me.md");
+      const filePath = path.join(siloWikiDir(), "update-me.md");
       const fileContent = await fs.readFile(filePath, "utf-8");
       expect(fileContent).toContain("# Updated");
       expect(fileContent).toContain("New body content.");
@@ -649,7 +655,7 @@ describe("MCP write tools", () => {
       expect(result.updated).toBe(true);
 
       // Verify original frontmatter fields preserved
-      const filePath = path.join(tmpDir, "wiki", "preserve-fm.md");
+      const filePath = path.join(siloWikiDir(), "preserve-fm.md");
       const fileContent = await fs.readFile(filePath, "utf-8");
       expect(fileContent).toContain("tags: [science, ai]");
       expect(fileContent).toContain("confidence: 0.8");
@@ -719,7 +725,7 @@ describe("MCP write tools", () => {
 
       expect(result.updated).toBe(true);
 
-      const filePath = path.join(tmpDir, "wiki", "double-fm-update.md");
+      const filePath = path.join(siloWikiDir(), "double-fm-update.md");
       const fileContent = await fs.readFile(filePath, "utf-8");
 
       // Count frontmatter delimiters — exactly one block (opening + closing = 2)
@@ -764,7 +770,7 @@ describe("MCP cross-referencing", () => {
 
     // The existing page should now contain a "See also" link to new-topic
     const existingContent = await fs.readFile(
-      path.join(tmpDir, "wiki", "existing-topic.md"),
+      path.join(siloWikiDir(), "existing-topic.md"),
       "utf-8",
     );
     expect(existingContent).toContain("See also:");
@@ -799,7 +805,7 @@ describe("MCP cross-referencing", () => {
 
     // The related page should now contain a "See also" link to page-to-update
     const relatedContent = await fs.readFile(
-      path.join(tmpDir, "wiki", "related-page.md"),
+      path.join(siloWikiDir(), "related-page.md"),
       "utf-8",
     );
     expect(relatedContent).toContain("See also:");
@@ -1042,7 +1048,7 @@ describe("seed_agent tool", () => {
 
     // Verify wiki pages were created
     const identityPage = await fs.readFile(
-      path.join(tmpDir, "wiki", "new-agent-identity.md"),
+      path.join(siloWikiDir(), "new-agent-identity.md"),
       "utf-8",
     );
     expect(identityPage).toContain("I am a new agent.");
@@ -1109,7 +1115,7 @@ describe("seed_agent tool", () => {
 
     // Wiki page should have updated content
     const pageContent = await fs.readFile(
-      path.join(tmpDir, "wiki", "idempotent-identity.md"),
+      path.join(siloWikiDir(), "idempotent-identity.md"),
       "utf-8",
     );
     expect(pageContent).toContain("Version 2 content.");
@@ -1137,7 +1143,7 @@ describe("update_metadata", () => {
     expect(result.updated).toBe(true);
 
     // Verify frontmatter was updated
-    const filePath = path.join(tmpDir, "wiki", "meta-test.md");
+    const filePath = path.join(siloWikiDir(), "meta-test.md");
     const fileContent = await fs.readFile(filePath, "utf-8");
     expect(fileContent).toContain("confidence: 0.9");
     expect(fileContent).toContain("ai");
@@ -1182,7 +1188,7 @@ describe("update_metadata", () => {
     expect(result.updated).toBe(true);
 
     const fileContent = await fs.readFile(
-      path.join(tmpDir, "wiki", "mcp-private.md"),
+      path.join(siloWikiDir(), "mcp-private.md"),
       "utf-8",
     );
     expect(fileContent).toContain("confidence: 0.95");
@@ -1240,7 +1246,7 @@ describe("update_metadata", () => {
 
     expect(result.updated).toBe(true);
 
-    const filePath = path.join(tmpDir, "wiki", "meta-unknown.md");
+    const filePath = path.join(siloWikiDir(), "meta-unknown.md");
     const fileContent = await fs.readFile(filePath, "utf-8");
     expect(fileContent).toContain("confidence: 0.7");
     expect(fileContent).not.toContain("random_field");
@@ -1261,7 +1267,7 @@ describe("update_metadata", () => {
 
     expect(result.updated).toBe(true);
 
-    const filePath = path.join(tmpDir, "wiki", "meta-contrib.md");
+    const filePath = path.join(siloWikiDir(), "meta-contrib.md");
     const fileContent = await fs.readFile(filePath, "utf-8");
     const parsed = parseFrontmatter(fileContent);
     const contributors = parsed.data.contributors as string[];
@@ -1279,7 +1285,7 @@ describe("update_metadata", () => {
       metadata: { disputed: true },
     });
 
-    const filePath = path.join(tmpDir, "wiki", "meta-updated.md");
+    const filePath = path.join(siloWikiDir(), "meta-updated.md");
     const fileContent = await fs.readFile(filePath, "utf-8");
     const today = new Date().toISOString().slice(0, 10);
     expect(fileContent).toContain(`updated: ${today}`);
@@ -1304,7 +1310,7 @@ describe("update_metadata", () => {
       },
     });
 
-    const filePath = path.join(tmpDir, "wiki", "meta-multi.md");
+    const filePath = path.join(siloWikiDir(), "meta-multi.md");
     const fileContent = await fs.readFile(filePath, "utf-8");
     expect(fileContent).toContain("confidence: 0.6");
     expect(fileContent).toContain("disputed: true");
@@ -3494,7 +3500,7 @@ describe("handleCreatePage author attribution", () => {
     expect(result.created).toBe(true);
 
     const raw = await fs.readFile(
-      path.join(tmpDir, "wiki", "test-page.md"),
+      path.join(siloWikiDir(), "test-page.md"),
       "utf-8",
     );
     const parsed = parseFrontmatter(raw);
@@ -3510,7 +3516,7 @@ describe("handleCreatePage author attribution", () => {
     expect(result.created).toBe(true);
 
     const raw = await fs.readFile(
-      path.join(tmpDir, "wiki", "default-author.md"),
+      path.join(siloWikiDir(), "default-author.md"),
       "utf-8",
     );
     const parsed = parseFrontmatter(raw);
@@ -3539,7 +3545,7 @@ describe("handleUpdatePage contributor attribution", () => {
     });
 
     const raw = await fs.readFile(
-      path.join(tmpDir, "wiki", "existing-page.md"),
+      path.join(siloWikiDir(), "existing-page.md"),
       "utf-8",
     );
     const parsed = parseFrontmatter(raw);
@@ -3562,7 +3568,7 @@ describe("handleUpdatePage contributor attribution", () => {
     });
 
     const raw = await fs.readFile(
-      path.join(tmpDir, "wiki", "dup-page.md"),
+      path.join(siloWikiDir(), "dup-page.md"),
       "utf-8",
     );
     const parsed = parseFrontmatter(raw);
@@ -3585,7 +3591,7 @@ describe("handleUpdatePage contributor attribution", () => {
     });
 
     const raw = await fs.readFile(
-      path.join(tmpDir, "wiki", "no-author-page.md"),
+      path.join(siloWikiDir(), "no-author-page.md"),
       "utf-8",
     );
     const parsed = parseFrontmatter(raw);

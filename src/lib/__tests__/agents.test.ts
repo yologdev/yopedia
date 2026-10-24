@@ -83,10 +83,11 @@ function makeProfile(overrides: Partial<AgentProfile> = {}): AgentProfile {
   };
 }
 
-/** Write a wiki page to the test wiki dir. */
+/** Write a wiki page to the test silo dir (tenants/yopedia/wiki/). */
 async function writeTestWikiPage(slug: string, content: string): Promise<void> {
-  const wikiDir = path.join(tmpDir, "wiki");
-  await fs.writeFile(path.join(wikiDir, `${slug}.md`), content, "utf-8");
+  const siloDir = path.join(tmpDir, "tenants", "yopedia", "wiki");
+  await fs.mkdir(siloDir, { recursive: true });
+  await fs.writeFile(path.join(siloDir, `${slug}.md`), content, "utf-8");
 }
 
 // ---------------------------------------------------------------------------

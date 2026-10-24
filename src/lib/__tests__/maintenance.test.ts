@@ -6,7 +6,6 @@ import {
   ensureDirectories,
   writeWikiPageWithSideEffects,
   serializeFrontmatter,
-  getWikiDir,
   type Frontmatter,
 } from "../wiki";
 import { createThread, addComment } from "../talk";
@@ -236,9 +235,11 @@ describe("scanForMaintenance", () => {
   it("enqueues an orphan-page fix for a file on disk with no index entry", async () => {
     // Seed a normal page (indexed), then write a raw .md file that bypasses the index.
     await seed("indexed-page");
-    const wikiDir = getWikiDir();
+    // getOnDiskSlugs scans tenant silo dirs, so write to the default silo
+    const siloDir = path.join(tmpDir, "tenants", "yopedia", "wiki");
+    await fs.mkdir(siloDir, { recursive: true });
     await fs.writeFile(
-      path.join(wikiDir, "orphan-page.md"),
+      path.join(siloDir, "orphan-page.md"),
       "# Orphan\n\nThis page exists on disk but is not in the index.",
     );
     const tasks = await scanForMaintenance();

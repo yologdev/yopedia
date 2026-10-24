@@ -85,11 +85,13 @@ describe("getOnDiskSlugs", () => {
   });
 
   it("returns slugs from .md files excluding index.md and log.md (fallback)", async () => {
-    const wikiDir = process.env.WIKI_DIR!;
-    await fs.writeFile(path.join(wikiDir, "alpha.md"), "# Alpha\n\nContent");
-    await fs.writeFile(path.join(wikiDir, "beta.md"), "# Beta\n\nContent");
-    await fs.writeFile(path.join(wikiDir, "index.md"), "# Index\n\n- alpha");
-    await fs.writeFile(path.join(wikiDir, "log.md"), "# Log\n\n- entry");
+    // getOnDiskSlugs now scans tenant silo dirs, not the flat wiki/ dir
+    const siloDir = path.join(tmpDir, "tenants", "yopedia", "wiki");
+    await fs.mkdir(siloDir, { recursive: true });
+    await fs.writeFile(path.join(siloDir, "alpha.md"), "# Alpha\n\nContent");
+    await fs.writeFile(path.join(siloDir, "beta.md"), "# Beta\n\nContent");
+    await fs.writeFile(path.join(siloDir, "index.md"), "# Index\n\n- alpha");
+    await fs.writeFile(path.join(siloDir, "log.md"), "# Log\n\n- entry");
 
     const slugs = await getOnDiskSlugs();
     expect(slugs.sort()).toEqual(["alpha", "beta"]);
@@ -101,11 +103,13 @@ describe("getOnDiskSlugs", () => {
   });
 
   it("ignores non-.md files (fallback)", async () => {
-    const wikiDir = process.env.WIKI_DIR!;
-    await fs.writeFile(path.join(wikiDir, "page.md"), "# Page\n\nContent");
-    await fs.writeFile(path.join(wikiDir, "readme.txt"), "Not a wiki page");
-    await fs.writeFile(path.join(wikiDir, "data.json"), "{}");
-    await fs.writeFile(path.join(wikiDir, ".hidden"), "secret");
+    // getOnDiskSlugs now scans tenant silo dirs, not the flat wiki/ dir
+    const siloDir = path.join(tmpDir, "tenants", "yopedia", "wiki");
+    await fs.mkdir(siloDir, { recursive: true });
+    await fs.writeFile(path.join(siloDir, "page.md"), "# Page\n\nContent");
+    await fs.writeFile(path.join(siloDir, "readme.txt"), "Not a wiki page");
+    await fs.writeFile(path.join(siloDir, "data.json"), "{}");
+    await fs.writeFile(path.join(siloDir, ".hidden"), "secret");
 
     const slugs = await getOnDiskSlugs();
     expect(slugs).toEqual(["page"]);
