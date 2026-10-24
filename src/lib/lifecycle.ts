@@ -12,7 +12,6 @@ import {
   findRelatedPages,
   updateRelatedPages,
   appendToLog,
-  wikiRelPath,
   tenantForOwner,
   tenantWikiRelPath,
   isArtifactType,
@@ -21,7 +20,7 @@ import {
 import { syncPageIndexForPage, removePageIndexForSlug } from "./page-index";
 import { getStorage } from "./storage";
 import { withFileLock } from "./lock";
-import { escapeRegex, DEFAULT_TENANT } from "./links";
+import { escapeRegex } from "./links";
 import { getErrorMessage } from "./errors";
 import { mapWithConcurrency } from "./concurrency";
 import { removeAliasForPage, updateAliasIndexForPage } from "./alias-index";
@@ -233,10 +232,6 @@ async function runPageLifecycleOp(
     }
     // Silo-primary: write to tenants/<tenant>/wiki/<slug>.md
     await writeWikiPage(slug, op.content, op.author, undefined, writeTenant);
-    // Also write flat copy (transition — removable after #869) so readWikiPage
-    // can find the page without a page index. writeWikiPage without tenant
-    // targets the flat path.
-    await writeWikiPage(slug, op.content, op.author);
   } else {
     try {
       const pre = await readWikiPageWithFrontmatter(slug);
@@ -259,26 +254,6 @@ async function runPageLifecycleOp(
     } catch (err: unknown) {
       if (!(err instanceof Error && 'code' in err && (err as NodeJS.ErrnoException).code === 'ENOENT')) {
         throw err;
-      }
-    }
-    // Also delete flat copy (transition cleanup — removable after #917).
-    try {
-      await getStorage().deleteFile(wikiRelPath(`${slug}.md`));
-    } catch (err: unknown) {
-      // Flat copy may already be gone — swallow ENOENT.
-      if (!(err instanceof Error && 'code' in err && (err as NodeJS.ErrnoException).code === 'ENOENT')) {
-        throw err;
-      }
-    }
-    // Also delete DEFAULT_TENANT silo copy — the line-239 dual-write now
-    // targets DEFAULT_TENANT instead of flat (transition — removable after #917).
-    if (deleteTenant !== DEFAULT_TENANT) {
-      try {
-        await getStorage().deleteFile(tenantWikiRelPath(DEFAULT_TENANT, `${slug}.md`));
-      } catch (err: unknown) {
-        if (!(err instanceof Error && 'code' in err && (err as NodeJS.ErrnoException).code === 'ENOENT')) {
-          throw err;
-        }
       }
     }
   }
@@ -646,8 +621,6 @@ async function runPageLifecycleOp(
         }
         // Silo-primary write for the stripped page.
         await writeWikiPage(entry.slug, updated, "system", "backlink strip", stripTenant);
-        // Also write flat copy (transition — removable after #869).
-        await writeWikiPage(entry.slug, updated, "system", "backlink strip");
         strippedBacklinksFrom.push(entry.slug);
       }
     });

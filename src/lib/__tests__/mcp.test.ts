@@ -1187,8 +1187,9 @@ describe("update_metadata", () => {
     });
     expect(result.updated).toBe(true);
 
+    const { tenantForOwner } = await import("../wiki");
     const fileContent = await fs.readFile(
-      path.join(siloWikiDir(), "mcp-private.md"),
+      path.join(tmpDir, "tenants", tenantForOwner("alice"), "wiki", "mcp-private.md"),
       "utf-8",
     );
     expect(fileContent).toContain("confidence: 0.95");
