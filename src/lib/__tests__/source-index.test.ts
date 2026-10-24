@@ -17,16 +17,22 @@ import { writeWikiPage, ensureDirectories, updateIndex } from "../wiki";
 import { serializeFrontmatter } from "../frontmatter";
 import type { IndexEntry } from "../types";
 
+import { _resetStorage } from "../storage";
+
 let tmpDir: string;
 let originalWikiDir: string | undefined;
 let originalRawDir: string | undefined;
+let originalDataDir: string | undefined;
 
 beforeEach(async () => {
   tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), "source-index-test-"));
   originalWikiDir = process.env.WIKI_DIR;
   originalRawDir = process.env.RAW_DIR;
+  originalDataDir = process.env.DATA_DIR;
   process.env.WIKI_DIR = path.join(tmpDir, "wiki");
   process.env.RAW_DIR = path.join(tmpDir, "raw");
+  process.env.DATA_DIR = tmpDir;
+  _resetStorage();
   await ensureDirectories();
   resetSourceIndex();
 });
@@ -42,6 +48,12 @@ afterEach(async () => {
   } else {
     process.env.RAW_DIR = originalRawDir;
   }
+  if (originalDataDir === undefined) {
+    delete process.env.DATA_DIR;
+  } else {
+    process.env.DATA_DIR = originalDataDir;
+  }
+  _resetStorage();
   await fs.rm(tmpDir, { recursive: true, force: true });
   resetSourceIndex();
 });
@@ -64,9 +76,11 @@ async function createPage(
   const content = serializeFrontmatter(fm, `# ${title}\n\nContent about ${title}.`);
   await writeWikiPage(slug, content);
 
-  // Update index so listWikiPages sees the page
-  const wikiDir = process.env.WIKI_DIR!;
-  const files = await fs.readdir(wikiDir);
+  // Update index so listWikiPages sees the page.
+  // writeWikiPage (no tenant) writes to tenants/yopedia/wiki/, so scan there.
+  const siloDir = path.join(tmpDir, "tenants", "yopedia", "wiki");
+  let files: string[] = [];
+  try { files = await fs.readdir(siloDir); } catch { /* dir may not exist yet */ }
   const allEntries: IndexEntry[] = [];
   for (const f of files) {
     if (!f.endsWith(".md") || f === "index.md" || f === "log.md") continue;

@@ -21,7 +21,7 @@ import {
 import { syncPageIndexForPage, removePageIndexForSlug } from "./page-index";
 import { getStorage } from "./storage";
 import { withFileLock } from "./lock";
-import { escapeRegex } from "./links";
+import { escapeRegex, DEFAULT_TENANT } from "./links";
 import { getErrorMessage } from "./errors";
 import { mapWithConcurrency } from "./concurrency";
 import { removeAliasForPage, updateAliasIndexForPage } from "./alias-index";
@@ -261,13 +261,24 @@ async function runPageLifecycleOp(
         throw err;
       }
     }
-    // Also delete flat copy (transition cleanup — removable after #869).
+    // Also delete flat copy (transition cleanup — removable after #917).
     try {
       await getStorage().deleteFile(wikiRelPath(`${slug}.md`));
     } catch (err: unknown) {
       // Flat copy may already be gone — swallow ENOENT.
       if (!(err instanceof Error && 'code' in err && (err as NodeJS.ErrnoException).code === 'ENOENT')) {
         throw err;
+      }
+    }
+    // Also delete DEFAULT_TENANT silo copy — the line-239 dual-write now
+    // targets DEFAULT_TENANT instead of flat (transition — removable after #917).
+    if (deleteTenant !== DEFAULT_TENANT) {
+      try {
+        await getStorage().deleteFile(tenantWikiRelPath(DEFAULT_TENANT, `${slug}.md`));
+      } catch (err: unknown) {
+        if (!(err instanceof Error && 'code' in err && (err as NodeJS.ErrnoException).code === 'ENOENT')) {
+          throw err;
+        }
       }
     }
   }

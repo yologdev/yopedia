@@ -293,32 +293,23 @@ export async function wikiPageExists(slug: string): Promise<boolean> {
   }
   const storage = getStorage();
 
-  // Silo-primary: try tenant path first (O(1) page-index lookup only —
-  // we must NOT call tenantForSlug here because its slow path triggers
-  // listWikiPages → scanWikiPagesUncached → readWikiPage → infinite loop).
+  // Silo-only: resolve tenant via page-index (O(1)), default to DEFAULT_TENANT.
+  // We must NOT call tenantForSlug here because its slow path triggers
+  // listWikiPages → scanWikiPagesUncached → readWikiPage → infinite loop.
+  let tenant: string = DEFAULT_TENANT;
   const pageIdx = await getPageIndex();
   if (pageIdx) {
     const entry = pageIdx[slug];
-    const tenant = tenantForOwner(entry?.owner);
-    const siloPath = tenantWikiRelPath(tenant, `${slug}.md`);
-    try {
-      await storage.readFile(siloPath);
-      return true;
-    } catch (e) {
-      if (!isEnoent(e)) {
-        logger.warn("wiki", `silo existence check failed for "${slug}", falling back to flat:`, e);
-      }
-      // Fall through to flat
-    }
+    tenant = tenantForOwner(entry?.owner);
   }
 
-  // Flat fallback
+  const siloPath = tenantWikiRelPath(tenant, `${slug}.md`);
   try {
-    await storage.readFile(wikiRelPath(`${slug}.md`));
+    await storage.readFile(siloPath);
     return true;
-  } catch (err) {
-    if (isEnoent(err)) return false;
-    throw err; // real storage error — let the caller decide, don't mask as "gone"
+  } catch (e) {
+    if (isEnoent(e)) return false;
+    throw e; // real storage error — let the caller decide, don't mask as "gone"
   }
 }
 
@@ -337,45 +328,36 @@ export async function readWikiPage(slug: string): Promise<WikiPage | null> {
   }
 
   const storage = getStorage();
-  const flatPath = `${getWikiDir()}/${slug}.md`;
 
-  // Silo-primary: try tenant path first. We use ONLY the O(1) page-index
-  // lookup — NOT tenantForSlug() — because its slow path triggers
-  // listWikiPages → scanWikiPagesUncached → readWikiPageWithFrontmatter →
-  // readWikiPage → infinite recursion.
   let content: string | null = null;
-  let actualPath: string = flatPath; // track where content was actually read from
+  let actualPath: string = "";
+
+  // Resolve the tenant: prefer page-index (O(1)), fall back to DEFAULT_TENANT.
+  // We must NOT call tenantForSlug here — its slow path triggers
+  // listWikiPages -> scanWikiPagesUncached -> readWikiPage -> infinite loop.
+  let tenant: string = DEFAULT_TENANT;
   const pageIdx = await getPageIndex();
   if (pageIdx) {
     const entry = pageIdx[slug];
-    const tenant = tenantForOwner(entry?.owner);
-    const siloPath = tenantWikiRelPath(tenant, `${slug}.md`);
-    try {
-      content = await storage.readFile(siloPath);
-      // Content came from the silo — resolve the absolute path
-      actualPath = path.join(getDataDir(), siloPath);
-    } catch (e) {
-      if (!isEnoent(e)) {
-        logger.warn("wiki", `silo read failed for "${slug}", falling back to flat:`, e);
-      }
-      // Fall through to flat fallback
+    tenant = tenantForOwner(entry?.owner);
+  }
+
+  const siloPath = tenantWikiRelPath(tenant, `${slug}.md`);
+  try {
+    content = await storage.readFile(siloPath);
+    actualPath = path.join(getDataDir(), siloPath);
+  } catch (e) {
+    if (!isEnoent(e)) {
+      logger.warn("wiki", `silo read failed for "${slug}":`, e);
     }
   }
 
-  // Flat fallback
+  // No flat fallback — silo is the sole read path after flat retirement (#921).
   if (content === null) {
-    try {
-      content = await storage.readFile(wikiRelPath(`${slug}.md`));
-      actualPath = flatPath;
-    } catch (err) {
-      if (!isEnoent(err)) {
-        logger.warn("wiki", `readWikiPage failed for "${slug}":`, err);
-      }
-      if (pageCache !== null) {
-        pageCache.set(slug, null);
-      }
-      return null;
+    if (pageCache !== null) {
+      pageCache.set(slug, null);
     }
+    return null;
   }
 
   // Derive title from the first markdown heading, falling back to the slug.
@@ -438,9 +420,9 @@ export async function tryReadWikiPageWithFrontmatter(
 
 /** Write (or overwrite) a wiki page. Ensures the wiki directory exists first. Throws on invalid slug.
  *
- * When `tenant` is provided, writes to the tenant silo path
- * (`tenants/<tenant>/wiki/<slug>.md`) instead of the flat path. Existing
- * callers that omit `tenant` are unaffected — backward compatible.
+ * When `tenant` is provided, writes to that tenant's silo path
+ * (`tenants/<tenant>/wiki/<slug>.md`). When omitted, defaults to
+ * `DEFAULT_TENANT` ("yopedia") — flat writes are retired (#921).
  */
 export async function writeWikiPage(
   slug: string,
@@ -450,9 +432,8 @@ export async function writeWikiPage(
   tenant?: string,
 ): Promise<void> {
   validateSlug(slug);
-  const storagePath = tenant
-    ? tenantWikiRelPath(tenant, `${slug}.md`)
-    : wikiRelPath(`${slug}.md`);
+  const effectiveTenant = tenant ?? DEFAULT_TENANT;
+  const storagePath = tenantWikiRelPath(effectiveTenant, `${slug}.md`);
   const storage = getStorage();
 
   // Snapshot the current content as a revision before overwriting.
@@ -460,7 +441,7 @@ export async function writeWikiPage(
   // a previous version to save).
   try {
     const existing = await storage.readFile(storagePath);
-    await saveRevision(slug, existing, author, reason, tenant);
+    await saveRevision(slug, existing, author, reason, effectiveTenant);
   } catch (err) {
     // File doesn't exist yet — first write, no revision needed.
     if (!isEnoent(err)) {

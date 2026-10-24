@@ -94,7 +94,7 @@ describe("writeWikiPage + readWikiPage roundtrip", () => {
     expect(page!.title).toBe("Test Page");
     expect(page!.content).toBe(content);
     expect(page!.path).toBe(
-      path.join(tmpDir, "wiki", "test-page.md"),
+      path.join(tmpDir, "tenants", "yopedia", "wiki", "test-page.md"),
     );
   });
 
@@ -1954,8 +1954,8 @@ describe("page cache", () => {
     const first = await readWikiPage("no-cache");
     expect(first!.content).toBe("# NC\n\nOriginal.");
 
-    // Modify file directly
-    const filePath = path.join(process.env.WIKI_DIR!, "no-cache.md");
+    // Modify file directly (must target the silo path that readWikiPage reads)
+    const filePath = path.join(tmpDir, "tenants", "yopedia", "wiki", "no-cache.md");
     await fs.writeFile(filePath, "# NC\n\nModified.", "utf-8");
 
     // Read again — should see the modified content (no caching)
@@ -2137,8 +2137,9 @@ describe("silo-primary reads", () => {
     );
   });
 
-  it("readWikiPage falls back to flat when silo file is missing", async () => {
+  it("readWikiPage returns null when only flat copy exists (silo missing)", async () => {
     const storage = (await import("../storage")).getStorage();
+    // Write only to flat — no silo copy
     await storage.writeFile(
       `wiki/flat-only.md`,
       "# Flat Only\n\nStill on flat.",
@@ -2149,30 +2150,26 @@ describe("silo-primary reads", () => {
     });
 
     const page = await readWikiPage("flat-only");
-    expect(page).not.toBeNull();
-    expect(page!.title).toBe("Flat Only");
-    expect(page!.content).toContain("Still on flat.");
-    // path must reflect the flat location since silo was missing
-    expect(page!.path).toBe(
-      path.join(tmpDir, "wiki", "flat-only.md"),
-    );
+    // Flat-only file must be invisible after flat retirement (#921)
+    expect(page).toBeNull();
   });
 
-  it("readWikiPage reads from flat when page-index is absent", async () => {
+  it("readWikiPage defaults to DEFAULT_TENANT silo when page-index is absent", async () => {
     // No page index seeded — getPageIndex() returns null
     const storage = (await import("../storage")).getStorage();
+    // Write to DEFAULT_TENANT silo
     await storage.writeFile(
-      `wiki/no-index.md`,
-      "# No Index\n\nDirect flat read.",
+      `tenants/yopedia/wiki/no-index.md`,
+      "# No Index\n\nDefault tenant read.",
     );
 
     const page = await readWikiPage("no-index");
     expect(page).not.toBeNull();
     expect(page!.title).toBe("No Index");
-    expect(page!.content).toContain("Direct flat read.");
-    // path must reflect the flat location since no page-index existed
+    expect(page!.content).toContain("Default tenant read.");
+    // path must reflect the DEFAULT_TENANT silo location
     expect(page!.path).toBe(
-      path.join(tmpDir, "wiki", "no-index.md"),
+      path.join(tmpDir, "tenants", "yopedia", "wiki", "no-index.md"),
     );
   });
 
@@ -2190,18 +2187,20 @@ describe("silo-primary reads", () => {
     expect(exists).toBe(true);
   });
 
-  it("wikiPageExists falls back to flat when silo missing", async () => {
+  it("wikiPageExists returns false when only flat copy exists (silo missing)", async () => {
     const storage = (await import("../storage")).getStorage();
     await storage.putIndex("pages", {
       "exists-flat": { slug: "exists-flat", title: "E", summary: "e", owner: "dave" },
     });
+    // Write only to flat — no silo copy
     await storage.writeFile(
       `wiki/exists-flat.md`,
       "# Exists\n\nFlat.",
     );
 
     const exists = await (await import("../wiki")).wikiPageExists("exists-flat");
-    expect(exists).toBe(true);
+    // Flat-only file must be invisible after flat retirement (#921)
+    expect(exists).toBe(false);
   });
 });
 
@@ -2228,12 +2227,12 @@ describe("writeWikiPage with tenant parameter", () => {
     expect(flatExists).toBe(false);
   });
 
-  it("writes to flat path when tenant is omitted (backward compat)", async () => {
+  it("writes to DEFAULT_TENANT silo when tenant is omitted", async () => {
     await ensureDirectories();
     await writeWikiPage("flat-write", "# Flat\n\nContent.");
 
     const storage = (await import("../storage")).getStorage();
-    const content = await storage.readFile("wiki/flat-write.md");
+    const content = await storage.readFile("tenants/yopedia/wiki/flat-write.md");
     expect(content).toBe("# Flat\n\nContent.");
   });
 

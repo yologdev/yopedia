@@ -250,16 +250,16 @@ describe("writeWikiPage integration", () => {
     const updatedContent = "# Page\n\nVersion 2.";
     await writeWikiPage("integrated", updatedContent);
 
-    const revisions = await listRevisions("integrated");
+    const revisions = await listRevisions("integrated", "yopedia");
     expect(revisions).toHaveLength(1);
 
     // The revision should contain the original content (v1).
-    const revContent = await readRevision("integrated", revisions[0].timestamp);
+    const revContent = await readRevision("integrated", revisions[0].timestamp, "yopedia");
     expect(revContent).toBe(originalContent);
 
-    // The current file should be v2.
+    // The current file should be v2 (now in the DEFAULT_TENANT silo).
     const current = await fs.readFile(
-      path.join(process.env.WIKI_DIR!, "integrated.md"),
+      path.join(tmpDir, "tenants", "yopedia", "wiki", "integrated.md"),
       "utf-8",
     );
     expect(current).toBe(updatedContent);
@@ -269,7 +269,7 @@ describe("writeWikiPage integration", () => {
     await ensureDirectories();
     await writeWikiPage("brand-new", "# Brand New\n\nFirst version.");
 
-    const revisions = await listRevisions("brand-new");
+    const revisions = await listRevisions("brand-new", "yopedia");
     expect(revisions).toEqual([]);
   });
 
@@ -279,16 +279,16 @@ describe("writeWikiPage integration", () => {
     await writeWikiPage("multi-edit", "# V2\n\nSecond.");
     await writeWikiPage("multi-edit", "# V3\n\nThird.");
 
-    const revisions = await listRevisions("multi-edit");
+    const revisions = await listRevisions("multi-edit", "yopedia");
     // Two overwrites → two revisions (v1 and v2 are snapshots).
     expect(revisions).toHaveLength(2);
 
     // Newest revision should be v2 (the one just before v3 was written).
-    const newest = await readRevision("multi-edit", revisions[0].timestamp);
+    const newest = await readRevision("multi-edit", revisions[0].timestamp, "yopedia");
     expect(newest).toBe("# V2\n\nSecond.");
 
     // Oldest revision should be v1.
-    const oldest = await readRevision("multi-edit", revisions[1].timestamp);
+    const oldest = await readRevision("multi-edit", revisions[1].timestamp, "yopedia");
     expect(oldest).toBe("# V1\n\nFirst.");
   });
 });
