@@ -4,7 +4,7 @@ import os from "os";
 import path from "path";
 import { migrateToTenants, getRedirectMap } from "../migrate-to-tenants";
 import { getCommonsIndex } from "../commons";
-import { ensureDirectories, writeWikiPage, rawRelPath } from "../wiki";
+import { ensureDirectories, rawRelPath } from "../wiki";
 import { createThread } from "../talk";
 import { getStorage, _resetStorage } from "../storage";
 
@@ -31,8 +31,17 @@ afterEach(async () => {
 
 async function createPage(slug: string, frontmatter: string, title: string) {
   await ensureDirectories();
-  await writeWikiPage(slug, `---\n${frontmatter}\n---\n\n# ${title}\n\nBody of ${title}.`);
-  const indexPath = path.join(process.env.WIKI_DIR!, "index.md");
+  const content = `---\n${frontmatter}\n---\n\n# ${title}\n\nBody of ${title}.`;
+  // Write directly to the flat wiki dir — this is the pre-migration layout
+  // that syncSiloForPage reads from.
+  const wikiDir = process.env.WIKI_DIR!;
+  await fs.writeFile(path.join(wikiDir, `${slug}.md`), content, "utf-8");
+  // Also write to the default tenant silo so readWikiPage (silo-only after
+  // flat retirement) can find and enrich the page during listWikiPages.
+  const siloDir = path.join(tmpDir, "tenants", "yopedia", "wiki");
+  await fs.mkdir(siloDir, { recursive: true });
+  await fs.writeFile(path.join(siloDir, `${slug}.md`), content, "utf-8");
+  const indexPath = path.join(wikiDir, "index.md");
   let existing = "";
   try {
     existing = await fs.readFile(indexPath, "utf-8");
@@ -135,8 +144,22 @@ describe("migrateToTenants — live", () => {
 
   it("copies every per-page artifact (revisions, discuss, assets) into the silo", async () => {
     await createPage("doc", "owner: alice\nvisibility: public", "Doc");
-    // Second write snapshots the first as a revision.
-    await writeWikiPage("doc", "---\nowner: alice\nvisibility: public\n---\n\n# Doc\n\nv2.");
+    // Manually create a flat revision (writeWikiPage now writes to silo,
+    // but the migration reads from flat paths).
+    const wikiDir = process.env.WIKI_DIR!;
+    const revDir = path.join(wikiDir, ".revisions", "doc");
+    await fs.mkdir(revDir, { recursive: true });
+    await fs.writeFile(
+      path.join(revDir, "2026-01-01T00-00-00.000Z.md"),
+      "---\nowner: alice\nvisibility: public\n---\n\n# Doc\n\nv1.",
+      "utf-8",
+    );
+    // Overwrite the flat page with v2.
+    await fs.writeFile(
+      path.join(wikiDir, "doc.md"),
+      "---\nowner: alice\nvisibility: public\n---\n\n# Doc\n\nv2.",
+      "utf-8",
+    );
     // A discussion thread + a binary asset.
     await createThread("doc", "Re: Doc", "alice", "first comment");
     await getStorage().writeAsset(
