@@ -71,8 +71,8 @@ import {
   handleGetContributor,
 } from "@/mcp";
 import { mergePages } from "@/lib/merge";
-import { readWikiPageWithFrontmatter } from "@/lib/wiki";
-import { canWriteFrontmatter } from "@/lib/authz";
+import { readWikiPage, readWikiPageWithFrontmatter, listReadableWikiPages } from "@/lib/wiki";
+import { canWriteFrontmatter, canReadFrontmatter } from "@/lib/authz";
 import { addToVault, vaultOwnedBy } from "@/lib/vault";
 import { getAgent, agentIdFor, assertCanMutateAgent } from "@/lib/agents";
 import { logger } from "@/lib/logger";
@@ -1128,7 +1128,7 @@ export async function dispatchMcp(
     case "server/discover":
       return ok(id, {
         supportedVersions: [MCP_PROTOCOL_VERSION, "2025-06-18"],
-        capabilities: { tools: {} },
+        capabilities: { tools: {}, resources: {} },
         _meta: {
           "io.modelcontextprotocol/serverInfo": MCP_SERVER_INFO,
         },
@@ -1146,7 +1146,7 @@ export async function dispatchMcp(
         : undefined;
       return ok(id, {
         protocolVersion: MCP_PROTOCOL_VERSION,
-        capabilities: { tools: {} },
+        capabilities: { tools: {}, resources: {} },
         serverInfo: MCP_SERVER_INFO,
         ...(instructions ? { instructions } : {}),
       });
@@ -1194,6 +1194,48 @@ export async function dispatchMcp(
         const message = err instanceof Error ? err.message : String(err);
         return ok(id, toolResult(`Error: ${message}`, true));
       }
+    }
+    case "resources/list": {
+      const entries = await listReadableWikiPages(principal);
+      const resources = entries.map((e) => ({
+        uri: `wiki://${e.slug}`,
+        name: e.title,
+        description: e.summary || undefined,
+        mimeType: "text/markdown",
+      }));
+      return ok(id, { resources });
+    }
+    case "resources/read": {
+      const params = (msg.params ?? {}) as { uri?: string };
+      const uri = params.uri;
+      if (!uri || !uri.startsWith("wiki://")) {
+        return rpcError(id, -32602, "Invalid params: uri must start with wiki://");
+      }
+      const slug = uri.slice("wiki://".length);
+      if (!slug) {
+        return rpcError(id, -32602, "Invalid params: empty slug in uri");
+      }
+
+      // Auth check: read the page with frontmatter to verify the caller may
+      // read it (private pages are owner-only).
+      const parsed = await readWikiPageWithFrontmatter(slug);
+      if (!parsed) {
+        return rpcError(id, -32002, `Resource not found: ${uri}`);
+      }
+      if (!canReadFrontmatter(parsed.frontmatter, principal)) {
+        return rpcError(id, -32002, `Resource not found: ${uri}`);
+      }
+
+      const page = await readWikiPage(slug);
+      return ok(id, {
+        contents: [
+          {
+            uri,
+            mimeType: "text/markdown",
+            text: page!.content,
+          },
+        ],
+      });
     }
     default:
       return rpcError(id, -32601, `Method not found: ${method ?? "(none)"}`);

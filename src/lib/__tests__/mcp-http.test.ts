@@ -1965,3 +1965,153 @@ describe("dispatchMcp — ingest_x_mention", () => {
     expect(tools.map((t) => t.name)).toContain("ingest_x_mention");
   });
 });
+
+// ---------------------------------------------------------------------------
+// resources/list and resources/read
+// ---------------------------------------------------------------------------
+describe("dispatchMcp — resources/list", () => {
+  it("returns wiki pages as MCP resources with uri/name/mimeType", async () => {
+    // Write a page and update the index so listWikiPages sees it.
+    const { serializeFrontmatter, updateIndex } = await import("../wiki");
+    const fm = { title: "Test Resource", created: "2025-01-01" };
+    await writeWikiPage(
+      "test-resource",
+      serializeFrontmatter(fm, "# Test Resource\n\nBody."),
+    );
+    await updateIndex([
+      { slug: "test-resource", title: "Test Resource", summary: "A test page" },
+    ]);
+
+    const res = await dispatchMcp({ id: 1, method: "resources/list" }, null);
+    expect(res).not.toBeNull();
+    const result = res!.result as { resources: { uri: string; name: string; mimeType?: string }[] };
+    expect(result.resources).toBeInstanceOf(Array);
+    expect(result.resources.length).toBeGreaterThanOrEqual(1);
+    const found = result.resources.find((r) => r.uri === "wiki://test-resource");
+    expect(found).toBeDefined();
+    expect(found!.name).toBe("Test Resource");
+    expect(found!.mimeType).toBe("text/markdown");
+  });
+
+  it("excludes private pages from unauthenticated list", async () => {
+    const { serializeFrontmatter, updateIndex } = await import("../wiki");
+    await writeWikiPage(
+      "public-page",
+      serializeFrontmatter({ title: "Public" } as Frontmatter, "# Public\n\nBody."),
+    );
+    await writeWikiPage(
+      "private-page",
+      serializeFrontmatter(
+        { title: "Private", owner: "alice", visibility: "private" } as Frontmatter,
+        "# Private\n\nSecret.",
+      ),
+    );
+    await updateIndex([
+      { slug: "public-page", title: "Public", summary: "Public page" },
+      { slug: "private-page", title: "Private", summary: "Private page", owner: "alice", visibility: "private" },
+    ]);
+
+    const res = await dispatchMcp({ id: 1, method: "resources/list" }, null);
+    const result = res!.result as { resources: { uri: string }[] };
+    const uris = result.resources.map((r) => r.uri);
+    expect(uris).toContain("wiki://public-page");
+    expect(uris).not.toContain("wiki://private-page");
+  });
+});
+
+describe("dispatchMcp — resources/read", () => {
+  it("returns page markdown content for a valid slug", async () => {
+    const { serializeFrontmatter } = await import("../wiki");
+    const body = "# Read Test\n\nHello world.";
+    await writeWikiPage(
+      "read-test",
+      serializeFrontmatter({ title: "Read Test" }, body),
+    );
+
+    const res = await dispatchMcp(
+      { id: 1, method: "resources/read", params: { uri: "wiki://read-test" } },
+      null,
+    );
+    expect(res).not.toBeNull();
+    const result = res!.result as {
+      contents: { uri: string; mimeType: string; text: string }[];
+    };
+    expect(result.contents).toBeInstanceOf(Array);
+    expect(result.contents.length).toBe(1);
+    expect(result.contents[0].uri).toBe("wiki://read-test");
+    expect(result.contents[0].mimeType).toBe("text/markdown");
+    expect(result.contents[0].text).toContain("Hello world.");
+  });
+
+  it("returns error for unknown slug", async () => {
+    const res = await dispatchMcp(
+      { id: 1, method: "resources/read", params: { uri: "wiki://nonexistent-page" } },
+      null,
+    );
+    expect(res).not.toBeNull();
+    expect(res!.error).toBeDefined();
+    expect(res!.error!.code).toBe(-32002);
+    expect(res!.error!.message).toMatch(/not found/i);
+  });
+
+  it("returns error for invalid uri format", async () => {
+    const res = await dispatchMcp(
+      { id: 1, method: "resources/read", params: { uri: "not-a-wiki-uri" } },
+      null,
+    );
+    expect(res).not.toBeNull();
+    expect(res!.error).toBeDefined();
+    expect(res!.error!.code).toBe(-32602);
+  });
+
+  it("denies read of private page to unauthenticated caller", async () => {
+    const { serializeFrontmatter } = await import("../wiki");
+    await writeWikiPage(
+      "alice-secret",
+      serializeFrontmatter(
+        { title: "Secret", owner: "alice", visibility: "private" } as Frontmatter,
+        "# Secret\n\nPrivate content.",
+      ),
+    );
+
+    const res = await dispatchMcp(
+      { id: 1, method: "resources/read", params: { uri: "wiki://alice-secret" } },
+      null,
+    );
+    expect(res).not.toBeNull();
+    expect(res!.error).toBeDefined();
+    expect(res!.error!.code).toBe(-32002);
+  });
+
+  it("allows owner to read their private page", async () => {
+    const { serializeFrontmatter } = await import("../wiki");
+    await writeWikiPage(
+      "alice-private-read",
+      serializeFrontmatter(
+        { title: "Alice Private", owner: "alice", visibility: "private" } as Frontmatter,
+        "# Alice Private\n\nOwner content.",
+      ),
+    );
+
+    const res = await dispatchMcp(
+      { id: 1, method: "resources/read", params: { uri: "wiki://alice-private-read" } },
+      ALICE,
+    );
+    expect(res).not.toBeNull();
+    const result = res!.result as {
+      contents: { uri: string; text: string }[];
+    };
+    expect(result.contents).toBeInstanceOf(Array);
+    expect(result.contents[0].text).toContain("Owner content.");
+  });
+});
+
+describe("dispatchMcp — initialize includes resources capability", () => {
+  it("initialize response includes resources in capabilities", async () => {
+    const res = await dispatchMcp({ id: 1, method: "initialize" }, null);
+    expect(res).not.toBeNull();
+    const result = res!.result as { capabilities: Record<string, unknown> };
+    expect(result.capabilities).toHaveProperty("resources");
+    expect(result.capabilities).toHaveProperty("tools");
+  });
+});
