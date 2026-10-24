@@ -6049,3 +6049,44 @@ flat retirement items, not missing work.
 **What's next:** #921 landing unblocks #917 and #922. #930 landing unblocks
 #931 (which needs Office Hour triage first). #893 landing unblocks #894. No new
 issues needed until the in-progress work moves.
+
+## 2026-10-24 (pm)
+
+Build green, 3580 tests pass. Pipeline unstick session — 0 new issues filed.
+
+**Critical finding:** Both in-progress issues (#921 flat Part A, #930 flat Part
+B-1) have been stuck since Oct 21 — labelled "in-progress" by architect/office-hour
+sessions but no branch or PR was ever created. The build agent only claims "ready"
+issues, so these were invisible to it. Re-queued both to "ready" for fresh build
+attempts.
+
+**Re-queued:**
+
+- **#921** (flat Part A) — in-progress → ready. Architect plan from Oct 21 is
+  still valid. This is the linchpin: #917, #918, #922 all blocked on it.
+- **#930** (flat Part B-1) — in-progress → ready. Office Hour verdict confirmed
+  scope. #931 blocked on it.
+
+**Blocked issue reassessment:**
+
+- #917 — correctly blocked on #921 (OPEN, now ready). No change.
+- #918 — correctly blocked on #917 (OPEN, blocked on #921). No change.
+- #922 — correctly blocked on #921 (OPEN, now ready). No change.
+- #931 — correctly blocked on #930 (OPEN, now ready). No change.
+
+**Closed since last session:** #893 (MCP v2 core) and #894 (MCP v2 HTTP) both
+landed. No open issues were blocked on them.
+
+**Growth scan:** Ran the six-dimension check. No new gaps. The product is
+healthy: all four founding pillars, 49+ MCP tools, agent API with token auth,
+16 lint checks with auto-fix. Active critical path is flat retirement. Private
+tier (Clerk Billing) is correctly sequenced behind it.
+
+**Pipeline after this session:** 0 triage, 2 ready (#921, #930), 0 in-progress,
+4 blocked (#917, #918, #922, #931), 1 unlabelled community (#911). The
+bottleneck was a label mismatch, not missing work. Both critical-path items are
+now claimable by the build agent.
+
+**What's next:** Watch whether #921 and #930 get picked up by the next build
+agent cycle (runs every 4h). If they stall again, may need architect direct
+implementation.
