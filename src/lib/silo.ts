@@ -20,7 +20,6 @@ import {
   rawRelPath,
   tenantWikiRelPath,
   tenantRawRelPath,
-  tenantForOwner,
   validateTenant,
 } from "./wiki";
 import { logger } from "./logger";
@@ -163,72 +162,31 @@ export async function removeSiloForPage(
 
 /** Summary returned by {@link reconcileSilos}. */
 export interface ReconcileResult {
-  total: number;
-  /** Pages whose silo copy was missing and freshly synced. */
-  synced: number;
-  /** Pages whose silo copy existed but had stale content — re-synced. */
-  stale: number;
-  alreadyCurrent: number;
   /** Silo pages with no corresponding index entry — cleaned up. */
   removed: number;
   errors: string[];
 }
 
-/** Infrastructure slugs that are not real pages — never synced to silos. */
+/** Infrastructure slugs that are not real pages — skip during orphan cleanup. */
 const SKIP = new Set(["index", "log"]);
 
 /**
- * Scan every page in the flat index, verify that its tenant silo copy exists,
- * and repair any that are missing. This closes the gap left by fail-soft silo
- * mirrors — a page whose mirror write failed silently will be re-synced here.
- *
- * Designed to run at the END of {@link rebuildDerivedIndexes} (it reads from
- * flat, so all indexes should be fresh first) and is also available for the
- * admin migrate endpoint.
+ * Orphan cleanup: find silo files that have no corresponding page-index
+ * entry and remove them. After flat retirement (#869) this is the sole
+ * purpose of reconciliation — the forward sync pass has been removed.
  */
 export async function reconcileSilos(): Promise<ReconcileResult> {
   const { listWikiPages } = await import("./wiki");
   const pages = await listWikiPages();
-  const storage = getStorage();
   const result: ReconcileResult = {
-    total: 0,
-    synced: 0,
-    stale: 0,
-    alreadyCurrent: 0,
     removed: 0,
     errors: [],
   };
 
-  for (const page of pages) {
-    if (SKIP.has(page.slug)) continue;
-    result.total++;
-    const tenant = tenantForOwner(page.owner);
-    try {
-      const flatPath = wikiRelPath(`${page.slug}.md`);
-      const siloPath = tenantWikiRelPath(tenant, `${page.slug}.md`);
-      const exists = await storage.fileExists(siloPath);
-      if (!exists) {
-        await syncSiloForPage(page.slug, tenant);
-        result.synced++;
-      } else {
-        // Silo exists — compare content to detect staleness.
-        const flatContent = await storage.readFile(flatPath);
-        const siloContent = await storage.readFile(siloPath);
-        if (flatContent !== siloContent) {
-          await syncSiloForPage(page.slug, tenant);
-          result.stale++;
-        } else {
-          result.alreadyCurrent++;
-        }
-      }
-    } catch (e) {
-      result.errors.push(`${page.slug}: ${String(e)}`);
-      logger.warn("silo", `reconcile failed for "${page.slug}":`, e);
-    }
-  }
-
-  // ── Reverse pass: find silo files with no index entry (ghosts) ──
+  // Build the set of known page slugs from the index.
   const pageSlugs = new Set(pages.map((p) => p.slug));
+
+  // Reverse pass: find silo files with no index entry (ghosts).
   try {
     const tenantDirs = await listSafe("tenants");
     for (const td of tenantDirs) {
