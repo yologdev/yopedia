@@ -2502,6 +2502,11 @@ describe("lint_wiki", () => {
       "---\ntags: [test]\n---\n# Orphan Page\n\nThis page is not in the index.",
     );
     await writeIndex([]); // empty index
+    // Seed page-index so getOnDiskSlugs() finds "orphan-page"
+    const { getStorage } = await import("../storage");
+    await getStorage().putIndex("pages", {
+      "orphan-page": { slug: "orphan-page", title: "Orphan Page", summary: "Test" },
+    });
 
     const result = await handleLintWiki({ checks: ["orphan-page"] });
     expect(result.issues.length).toBeGreaterThanOrEqual(1);
@@ -4802,12 +4807,17 @@ describe("revert_revision", () => {
 
 describe("maintenance_scan", () => {
   it("returns tasks with default cap", async () => {
-    // Create an orphan page (on disk, not in index) so the scan has something to find
+    // Create an orphan page (in page-index but not in Markdown index) so the scan has something to find
     await writeTestPage(
       "orphan-maint",
       "---\ntags: [test]\n---\n# Orphan Maintenance\n\nThis page has real content that is long enough to not be empty.",
     );
     await writeIndex([]); // empty index → orphan-maint is an orphan
+    // Seed page-index so getOnDiskSlugs() finds "orphan-maint"
+    const { getStorage } = await import("../storage");
+    await getStorage().putIndex("pages", {
+      "orphan-maint": { slug: "orphan-maint", title: "Orphan Maintenance", summary: "Test" },
+    });
 
     const result = await handleMaintenanceScan({});
     expect(result).toHaveProperty("tasks");

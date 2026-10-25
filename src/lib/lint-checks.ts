@@ -1,5 +1,4 @@
-import { getStorage } from "./storage";
-import { readWikiPage, readWikiPageWithFrontmatter, listWikiPages, tenantWikiRelPath } from "./wiki";
+import { readWikiPage, readWikiPageWithFrontmatter, listWikiPages } from "./wiki";
 import { hasLLMKey, callLLM } from "./llm";
 import { loadPageConventions } from "./schema";
 import { extractWikiLinks } from "./links";
@@ -10,8 +9,6 @@ import { parseSources } from "./sources";
 import { getDiscussionStatsForSlugs, getDiscussionStats } from "./talk";
 import { listRawSources, readRawSource } from "./raw";
 import { getPageIndex } from "./page-index";
-import { getDataDir, getTenantsDir } from "./paths";
-import * as path from "path";
 
 /** All known lint check types (const tuple for Zod enum compatibility). */
 export const ALL_CHECK_TYPES = [
@@ -36,60 +33,18 @@ export const ALL_CHECK_TYPES = [
 // Files that are part of the wiki infrastructure, not content pages.
 export const INFRASTRUCTURE_FILES = new Set(["index.md", "log.md"]);
 
-/**
- * Get all content page slugs known to the system.
- *
- * Scans every tenant silo directory (`tenants/<t>/wiki/`) plus the legacy flat
- * `wiki/` directory for `.md` files, and merges with the page-index when
- * available. The union is essential for orphan-page detection: a file written
- * directly to disk (bypassing the index) must still appear so
- * `checkOrphanPages` can flag it.
- *
- * When the page-index is absent (never seeded), the disk scan is the sole
- * source — same behaviour as before the index existed.
- */
 export async function getOnDiskSlugs(): Promise<string[]> {
-  const slugs = new Set<string>();
-  const storage = getStorage();
-
-  /** Scan one directory for `.md` content pages and add their slugs. */
-  async function scanDir(relPath: string): Promise<void> {
-    try {
-      const entries = await storage.listFiles(relPath);
-      for (const e of entries) {
-        if (e.name.endsWith(".md") && !INFRASTRUCTURE_FILES.has(e.name)) {
-          slugs.add(e.name.replace(/\.md$/, ""));
-        }
-      }
-    } catch {
-      // directory may not exist — swallow silently.
-    }
-  }
-
-  // 1a. Scan every tenant silo directory
-  const tenantsRel = path.relative(getDataDir(), getTenantsDir());
-  try {
-    const tenantDirs = await storage.listFiles(tenantsRel);
-    for (const td of tenantDirs) {
-      if (td.isDirectory) {
-        await scanDir(tenantWikiRelPath(td.name, ""));
-      }
-    }
-  } catch {
-    // tenants/ dir may not exist yet — swallow silently.
-  }
-
-  // 2. Page-index overlay — includes pages that may not have flat files
+  // After flat retirement (#869) the page-index is the sole source of known
+  // slugs. The old directory scan (flat then silo) has been removed.
   try {
     const idx = await getPageIndex();
     if (idx) {
-      for (const slug of Object.keys(idx)) slugs.add(slug);
+      return Object.keys(idx);
     }
-  } catch (err) {
-    logger.warn("lint", "page-index read failed; continuing with disk scan only", err);
+  } catch {
+    // page-index not available — return empty.
   }
-
-  return [...slugs];
+  return [];
 }
 
 /**
