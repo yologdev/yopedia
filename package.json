@@ -19,7 +19,7 @@
     "@ai-sdk/google": "^3.0.60",
     "@ai-sdk/openai": "^3.0.50",
     "@clerk/nextjs": "^7.4.2",
-    "@modelcontextprotocol/sdk": "^1.29.0",
+    "@modelcontextprotocol/server": "^2.4.0",
     "@mozilla/readability": "^0.6.0",
     "@tailwindcss/typography": "^0.5.19",
     "ai": "^6.0.146",
@@ -40,6 +40,7 @@
   },
   "devDependencies": {
     "@eslint/eslintrc": "^3",
+    "@modelcontextprotocol/client": "^2.4.0",
     "@opennextjs/cloudflare": "1.20.1",
     "@tailwindcss/postcss": "^4",
     "@types/node": "^20",
