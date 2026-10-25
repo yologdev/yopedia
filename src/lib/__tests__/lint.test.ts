@@ -90,6 +90,10 @@ describe("lint", () => {
       { slug: "hello", title: "Hello", summary: "A greeting page" },
     ];
     await updateIndex(entries);
+    const { getStorage } = await import("../storage");
+    await getStorage().putIndex("pages", {
+      hello: { slug: "hello", title: "Hello", summary: "A greeting page" },
+    });
 
     const result = await lint();
 
@@ -109,6 +113,10 @@ describe("lint", () => {
     );
     // Create an empty index with no entries
     await updateIndex([]);
+    const { getStorage } = await import("../storage");
+    await getStorage().putIndex("pages", {
+      orphan: { slug: "orphan", title: "Orphan", summary: "Orphan page" },
+    });
 
     const result = await lint();
     const orphanIssues = result.issues.filter((i) => i.type === "orphan-page");
@@ -140,6 +148,10 @@ describe("lint", () => {
       { slug: "empty", title: "Empty Page", summary: "Barely anything here" },
     ];
     await updateIndex(entries);
+    const { getStorage } = await import("../storage");
+    await getStorage().putIndex("pages", {
+      empty: { slug: "empty", title: "Empty Page", summary: "Barely anything here" },
+    });
 
     const result = await lint();
     const emptyIssues = result.issues.filter((i) => i.type === "empty-page");
@@ -164,6 +176,11 @@ describe("lint", () => {
       { slug: "beta", title: "Beta Topic", summary: "Beta page" },
     ];
     await updateIndex(entries);
+    const { getStorage } = await import("../storage");
+    await getStorage().putIndex("pages", {
+      alpha: { slug: "alpha", title: "Alpha", summary: "Alpha page" },
+      beta: { slug: "beta", title: "Beta Topic", summary: "Beta page" },
+    });
 
     const result = await lint();
     const crossRefIssues = result.issues.filter(
@@ -190,6 +207,11 @@ describe("lint", () => {
       { slug: "beta", title: "Beta Topic", summary: "Beta page" },
     ];
     await updateIndex(entries);
+    const { getStorage } = await import("../storage");
+    await getStorage().putIndex("pages", {
+      alpha: { slug: "alpha", title: "Alpha", summary: "Alpha page" },
+      beta: { slug: "beta", title: "Beta Topic", summary: "Beta page" },
+    });
 
     const result = await lint();
     const crossRefIssues = result.issues.filter(
@@ -218,6 +240,10 @@ describe("lint", () => {
     await updateIndex([
       { slug: "ghost", title: "Ghost", summary: "Missing file" },
     ]);
+    const { getStorage } = await import("../storage");
+    await getStorage().putIndex("pages", {
+      orphan: { slug: "orphan", title: "Orphan", summary: "Orphan page" },
+    });
 
     const result = await lint();
 
@@ -253,6 +279,11 @@ describe("lint", () => {
       { slug: "ai", title: "AI", summary: "AI page" },
     ];
     await updateIndex(entries);
+    const { getStorage } = await import("../storage");
+    await getStorage().putIndex("pages", {
+      overview: { slug: "overview", title: "Overview", summary: "Overview page" },
+      ai: { slug: "ai", title: "AI", summary: "AI page" },
+    });
 
     const result = await lint();
     const crossRefIssues = result.issues.filter(
@@ -277,6 +308,11 @@ describe("lint", () => {
       { slug: "neural-network", title: "Neural Network", summary: "NN page" },
     ];
     await updateIndex(entries);
+    const { getStorage } = await import("../storage");
+    await getStorage().putIndex("pages", {
+      intro: { slug: "intro", title: "Intro", summary: "Intro page" },
+      "neural-network": { slug: "neural-network", title: "Neural Network", summary: "NN page" },
+    });
 
     const result = await lint();
     const crossRefIssues = result.issues.filter(
@@ -303,6 +339,11 @@ describe("lint", () => {
       { slug: "go-lang", title: "Go", summary: "Go page" },
     ];
     await updateIndex(entries);
+    const { getStorage } = await import("../storage");
+    await getStorage().putIndex("pages", {
+      search: { slug: "search", title: "Search", summary: "Search page" },
+      "go-lang": { slug: "go-lang", title: "Go", summary: "Go page" },
+    });
 
     const result = await lint();
     const crossRefIssues = result.issues.filter(
@@ -327,6 +368,11 @@ describe("lint", () => {
       { slug: "map", title: "Map", summary: "Map page" },
     ];
     await updateIndex(entries);
+    const { getStorage } = await import("../storage");
+    await getStorage().putIndex("pages", {
+      graphics: { slug: "graphics", title: "Graphics", summary: "Graphics page" },
+      map: { slug: "map", title: "Map", summary: "Map page" },
+    });
 
     const result = await lint();
     const crossRefIssues = result.issues.filter(
@@ -351,6 +397,11 @@ describe("lint", () => {
       { slug: "alpha", title: "Alpha", summary: "First page" },
       { slug: "beta", title: "Beta", summary: "Second page" },
     ]);
+    const { getStorage } = await import("../storage");
+    await getStorage().putIndex("pages", {
+      alpha: { slug: "alpha", title: "Alpha", summary: "First page" },
+      beta: { slug: "beta", title: "Beta", summary: "Second page" },
+    });
 
     await lint();
 
@@ -391,6 +442,12 @@ describe("lint", () => {
       { slug: "gamma", title: "Gamma", summary: "Gamma concept" },
     ];
     await updateIndex(entries);
+    const { getStorage } = await import("../storage");
+    await getStorage().putIndex("pages", {
+      alpha: { slug: "alpha", title: "Alpha", summary: "Alpha concept" },
+      beta: { slug: "beta", title: "Beta", summary: "Beta concept" },
+      gamma: { slug: "gamma", title: "Gamma", summary: "Gamma concept" },
+    });
 
     // Spy on fs.readFile to count actual disk reads for .md files
     const origReadFile = fs.readFile;
@@ -905,6 +962,11 @@ Every page must start with a level-1 heading.
       { slug: "transformer", title: "Transformer", summary: "Test" },
       { slug: "bert", title: "BERT", summary: "Test" },
     ]);
+    const { getStorage } = await import("../storage");
+    await getStorage().putIndex("pages", {
+      transformer: { slug: "transformer", title: "Transformer", summary: "Test" },
+      bert: { slug: "bert", title: "BERT", summary: "Test" },
+    });
 
     const result = await lint();
     const conceptIssues = result.issues.filter(
@@ -989,6 +1051,11 @@ Every page must start with a level-1 heading.
     await updateIndex([
       { slug: "linker", title: "Linker", summary: "Test" },
     ]);
+    // Seed page-index so getOnDiskSlugs() finds "linker"
+    const { getStorage } = await import("../storage");
+    await getStorage().putIndex("pages", {
+      linker: { slug: "linker", title: "Linker", summary: "Test" },
+    });
 
     const result = await lint();
     const brokenLinkIssues = result.issues.filter(
@@ -1059,11 +1126,16 @@ describe("extractWikiLinks", () => {
 
 describe("lint with LintOptions", () => {
   it("returns only orphan-page issues when checks: ['orphan-page']", async () => {
-    // Create a page on disk that isn't in the index → orphan-page
+    // Create a page that's in the page-index but not in the Markdown index → orphan-page
     await writeWikiPage(
       "orphan-only",
       "# Orphan Only\n\nThis page exists on disk but is not in the index.",
     );
+    // Seed page-index so getOnDiskSlugs() finds "orphan-only"
+    const { getStorage } = await import("../storage");
+    await getStorage().putIndex("pages", {
+      "orphan-only": { slug: "orphan-only", title: "Orphan Only", summary: "Test" },
+    });
     // Also create a stale-index scenario: index references a page that doesn't exist
     const entries: IndexEntry[] = [
       { slug: "ghost", title: "Ghost", summary: "Does not exist on disk" },

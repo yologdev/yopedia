@@ -233,9 +233,17 @@ describe("scanForMaintenance", () => {
   });
 
   it("enqueues an orphan-page fix for a file on disk with no index entry", async () => {
-    // Seed a normal page (indexed), then write a raw .md file that bypasses the index.
+    // Seed a normal page (indexed), then add an entry to the page-index that
+    // bypasses the Markdown index — so it appears in getOnDiskSlugs() but not
+    // in the index, making it an orphan.
     await seed("indexed-page");
-    // getOnDiskSlugs scans tenant silo dirs, so write to the default silo
+    const { getStorage } = await import("../storage");
+    const existingIdx = (await getStorage().getIndex("pages")) ?? {};
+    await getStorage().putIndex("pages", {
+      ...existingIdx,
+      "orphan-page": { slug: "orphan-page", title: "Orphan", summary: "Test" },
+    });
+    // Also write the file on disk so checkOrphanPages can read it
     const siloDir = path.join(tmpDir, "tenants", "yopedia", "wiki");
     await fs.mkdir(siloDir, { recursive: true });
     await fs.writeFile(

@@ -84,17 +84,14 @@ describe("getOnDiskSlugs", () => {
     expect(slugs.sort()).toEqual(["alpha", "beta"]);
   });
 
-  it("returns slugs from .md files excluding index.md and log.md (fallback)", async () => {
-    // getOnDiskSlugs now scans tenant silo dirs, not the flat wiki/ dir
+  it("ignores silo .md files after flat retirement (page-index only)", async () => {
     const siloDir = path.join(tmpDir, "tenants", "yopedia", "wiki");
     await fs.mkdir(siloDir, { recursive: true });
     await fs.writeFile(path.join(siloDir, "alpha.md"), "# Alpha\n\nContent");
     await fs.writeFile(path.join(siloDir, "beta.md"), "# Beta\n\nContent");
-    await fs.writeFile(path.join(siloDir, "index.md"), "# Index\n\n- alpha");
-    await fs.writeFile(path.join(siloDir, "log.md"), "# Log\n\n- entry");
 
     const slugs = await getOnDiskSlugs();
-    expect(slugs.sort()).toEqual(["alpha", "beta"]);
+    expect(slugs).toEqual([]);
   });
 
   it("returns empty array when directory does not exist", async () => {
@@ -102,8 +99,7 @@ describe("getOnDiskSlugs", () => {
     expect(slugs).toEqual([]);
   });
 
-  it("ignores non-.md files (fallback)", async () => {
-    // getOnDiskSlugs now scans tenant silo dirs, not the flat wiki/ dir
+  it("ignores silo files (no disk scan after flat retirement)", async () => {
     const siloDir = path.join(tmpDir, "tenants", "yopedia", "wiki");
     await fs.mkdir(siloDir, { recursive: true });
     await fs.writeFile(path.join(siloDir, "page.md"), "# Page\n\nContent");
@@ -112,7 +108,7 @@ describe("getOnDiskSlugs", () => {
     await fs.writeFile(path.join(siloDir, ".hidden"), "secret");
 
     const slugs = await getOnDiskSlugs();
-    expect(slugs).toEqual(["page"]);
+    expect(slugs).toEqual([]);
   });
 
   it("returns empty array for an empty directory", async () => {
