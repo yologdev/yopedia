@@ -61,10 +61,10 @@ export function rawRelPath(filename: string): string {
 // ---------------------------------------------------------------------------
 // Per-tenant path helpers (tenant-silos groundwork — see yopedia-concept.md).
 //
-// Additive and behavior-preserving: the legacy `wikiRelPath`/`rawRelPath`
-// above are unchanged, and nothing yet routes through these. Later phases
-// thread a `tenant` (the owner handle) through reads/writes and the migration
-// relocates existing content under `tenants/<tenant>/…`.
+// These produce silo-relative paths under `tenants/<tenant>/…`, which is the
+// sole storage layer after flat retirement (#869, #930). The legacy
+// `wikiRelPath`/`rawRelPath` above are kept for shared infrastructure paths
+// (e.g. the global index) but page reads/writes route through tenant silos.
 // ---------------------------------------------------------------------------
 
 /**
