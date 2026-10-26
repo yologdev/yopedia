@@ -1,12 +1,11 @@
 /**
  * Per-tenant silo utilities (tenant-silos P5a).
  *
- * Each tenant's folder `tenants/<tenant>/…` is the PRIMARY storage location
+ * Each tenant's folder `tenants/<tenant>/…` is the SOLE storage location
  * for that owner's pages — a self-contained vault (Obsidian-servable).
- * lifecycle.ts writes silo-primary (tenants/<tenant>/wiki/<slug>.md) and
- * readWikiPage tries the silo path first, falling back to the legacy flat
- * path during the transition (#869). A redundant flat copy is still written
- * during the transition but will be removed once flat retirement completes.
+ * Flat retirement is complete (#869, #930): there is no legacy flat path
+ * and no fallback. lifecycle.ts writes silo-only and readWikiPage reads
+ * silo-only.
  *
  * Artifacts stored per page: wiki md, raw source, revision history, discussion
  * threads, and binary assets. The embedding vector store is internal (not part
@@ -77,8 +76,7 @@ async function deleteDirSafe(path: string): Promise<void> {
 
 /**
  * Mirror every per-page artifact for one slug into its tenant silo (idempotent
- * — overwrites). Reads from flat (the write primary), so call AFTER the flat
- * write completes. Returns the count of artifacts copied.
+ * — overwrites). Returns the count of artifacts copied.
  */
 export async function syncSiloForPage(
   slug: string,

@@ -45,9 +45,8 @@ are built and deployed:
 The full picture is the **Roadmap** in [`yopedia-concept.md`](yopedia-concept.md).
 Near-term threads (commons-first):
 
-- **Flat retirement** — nearly complete; legacy flat-path writes and fallback reads
-  are removed (tracking umbrella #869 closed). Only #930 remains; once it closes
-  the silo is the sole storage layer.
+- **Flat retirement** — complete (#869, #930 closed). The silo is the sole
+  storage layer; all legacy flat-path writes and fallback reads have been removed.
 - **Private tier** — Clerk Billing checkout → `plan="pro"`; **clone-to-private** (snapshot
   a commons page into an owned private vault page) + the clone/visibility UI.
 - Trust scores, agent-surface research, federation.
