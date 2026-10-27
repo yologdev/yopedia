@@ -17,6 +17,7 @@ import { withFileLock } from "./lock";
 import { tenantForOwner } from "./wiki";
 import { slugify } from "./slugify";
 import { logger } from "./logger";
+import type { Frontmatter } from "./frontmatter";
 
 // ===========================================================================
 // Multiple named vaults (commons-first, v1: public)
@@ -192,6 +193,116 @@ export async function removeFromVault(
     ...v,
     slugs: v.slugs.filter((s) => s !== slug),
   }));
+}
+
+// ===========================================================================
+// Clone-to-private — snapshot a commons page into a private vault
+//
+// In the commons-first model, a PUBLIC vault holds references (slug pointers
+// to live commons pages). A PRIVATE vault holds clones — independent,
+// owner-only snapshots. Cloning reads the source page, writes a NEW page with
+// `visibility: "private"`, `owner: <user>`, and `cloned_from: <sourceSlug>`
+// provenance, then adds the clone's slug to the target vault.
+//
+// Authorization: the caller must pass `canSetPrivate()` (paid plan gate).
+// This is enforced at the API layer, not here — this function trusts its
+// caller's authz check. The gate is fail-closed (402) until Clerk Billing
+// (#958) is wired.
+// ===========================================================================
+
+/** Result of a successful {@link cloneToPrivate} call. */
+export interface CloneResult {
+  /** The slug of the newly created private page. */
+  cloneSlug: string;
+  /** The source page slug the clone was made from. */
+  sourceSlug: string;
+  /** The owner handle set on the cloned page. */
+  owner: string;
+}
+
+/**
+ * Clone a public commons page into a private vault as an owner-only snapshot.
+ *
+ * - Reads the source page (must exist, must be public / not private).
+ * - Writes a new page with `visibility: "private"`, `owner: <owner>`, and
+ *   `cloned_from: <sourceSlug>` provenance in its frontmatter.
+ * - The cloned page gets a distinct slug: `<sourceSlug>--private-<ownerSlug>`.
+ * - Adds the clone's slug to the target vault.
+ *
+ * Does NOT check `canSetPrivate()` — that gate is the API layer's job.
+ *
+ * @returns The clone metadata.
+ * @throws When the source page doesn't exist, is private, or the vault
+ *   doesn't exist / isn't owned by the caller.
+ */
+export async function cloneToPrivate(
+  sourceSlug: string,
+  vaultId: string,
+  owner: string,
+): Promise<CloneResult> {
+  // Dynamic imports to avoid a static cycle (vault → wiki → lifecycle → vault).
+  const { readWikiPageWithFrontmatter } = await import("./wiki");
+  const { serializeFrontmatter } = await import("./frontmatter");
+  const { writeWikiPageWithSideEffects } = await import("./lifecycle");
+
+  // 1. Read the source page.
+  const source = await readWikiPageWithFrontmatter(sourceSlug);
+  if (!source) {
+    throw new Error(`Source page not found: "${sourceSlug}"`);
+  }
+
+  // 2. Ensure the source is public (not private).
+  if (source.frontmatter.visibility === "private") {
+    throw new Error(`Source page "${sourceSlug}" is private — cannot clone a private page.`);
+  }
+
+  // 3. Verify the target vault exists.
+  const vault = await getVault(vaultId);
+  if (!vault) {
+    throw new Error(`Vault not found: "${vaultId}"`);
+  }
+
+  // 4. Build the clone slug.
+  const ownerSlug = slugify(owner);
+  const cloneSlug = `${sourceSlug}--private-${ownerSlug}`;
+
+  // 5. Build the clone's frontmatter — carry over selected fields from the
+  //    source, override ownership and visibility, add provenance.
+  const cloneFm: Frontmatter = { ...source.frontmatter };
+  cloneFm.visibility = "private";
+  cloneFm.owner = owner;
+  cloneFm.cloned_from = sourceSlug;
+  // Reset authorship to the cloning user — this is their private copy.
+  cloneFm.authors = [owner];
+  delete cloneFm.contributors;
+  // Stamp the clone time.
+  cloneFm.updated = new Date().toISOString();
+
+  // 6. Serialize and write the cloned page.
+  const cloneContent = serializeFrontmatter(cloneFm, source.body);
+  const title =
+    typeof source.frontmatter.title === "string" && source.frontmatter.title
+      ? source.frontmatter.title
+      : source.title;
+  const summary =
+    typeof source.frontmatter.summary === "string" && source.frontmatter.summary
+      ? source.frontmatter.summary
+      : `Private clone of ${sourceSlug}`;
+
+  await writeWikiPageWithSideEffects({
+    slug: cloneSlug,
+    title,
+    content: cloneContent,
+    summary,
+    logOp: "other",
+    crossRefSource: null, // no cross-ref for private clones
+    author: owner,
+  });
+
+  // 7. Add the cloned page to the target vault.
+  await addToVault(vaultId, cloneSlug);
+
+  return { cloneSlug, sourceSlug, owner };
 }
 
 /**
