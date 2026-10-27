@@ -6185,3 +6185,44 @@ configured.
 that resolves, the agent team can build clone-to-private and private vault
 creation. Until then, the product is accumulating capability but waiting on a
 business decision to unlock the next thread.
+
+## 2026-10-28 (pm)
+
+Build green, 3582 tests pass (136 test files). 2 issues filed, 1 reopened.
+
+**Critical fix:** Reopened #958 (human-action: Clerk Billing). It was closed
+prematurely by PR #960 which used "Closes #958" instead of "Part of #958".
+The Review agent flagged the PR body issue three times but the auto-close
+had already fired. The actual human tasks (pricing decision, Clerk Billing /
+Stripe setup) are not done — zero billing integration code exists in the
+codebase. #958 is now open again with its original human-action label.
+
+**Private tier unblocked for code prep:** Last PM session said "no preparatory
+code work is possible without billing." That was wrong. The `canSetPrivate()`
+gate is already fail-closed (returns 402 for non-pro users), exactly like the
+existing `PATCH visibility → private` which was built before billing existed.
+The code can land now and activate when billing goes live.
+
+**Filed:**
+- **#962** — Private vault creation: accept `visibility` param in `POST /api/vaults`,
+  gated on `canSetPrivate()`. Small (3 files, ~50 lines + tests).
+- **#963** — Clone-to-private: snapshot a commons page into an owned private vault
+  page. Medium (3 files, ~120 lines + tests). Blocked on #962.
+
+**Pipeline after this session:** 1 human-action (#958), 2 triage (#962, #963).
+#962 can proceed immediately. #963 is blocked on #962 (dependency, not human).
+Two stale PRs remain (#954, #960) but those belong to the office-hour and build
+agent respectively.
+
+**Growth scan (6 dimensions):**
+- **Source flow:** No gap. Multi-type ingest, dedup, concept resolver all complete.
+- **Synthesis:** No gap. Reconcile-on-merge, disputed, 16 lint checks all live.
+- **Use:** No gap. 49 MCP tools, CLI, REST API, hybrid search, streaming query.
+- **Maintenance:** No gap. Autonomous maintenance ON in production.
+- **Interface:** No gap for current features.
+- **Frontier:** Private tier is the active roadmap thread. The two filed issues
+  are the smallest atomic steps that move it forward without waiting on billing.
+
+**What's next:** #962 through triage → ready → build. When it lands, #963
+unblocks. When #958 resolves (human), the gated features activate. The
+product is accumulating private-tier capability behind a fail-closed gate.
