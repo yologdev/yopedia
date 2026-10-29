@@ -73,7 +73,7 @@ import {
   tenantForOwner,
   type Frontmatter,
 } from "./lib/wiki";
-import { canReadFrontmatter, canWriteFrontmatter } from "./lib/authz";
+import { canReadFrontmatter, canWriteFrontmatter, canSetPrivate } from "./lib/authz";
 import type { Principal } from "./lib/auth";
 import { extractSummary, ingest, ingestUrl, ingestImage, ingestPdf, ingestXMention, reingest, readLedger, type LedgerEntry, type IngestOptions } from "./lib/ingest";
 import { query, saveAnswerToWiki, type QueryFormat } from "./lib/query";
@@ -94,7 +94,7 @@ import { listThreads, getThread, createThread, resolveThread, addComment } from 
 import { queryByFrontmatter, validateQuery, type DataviewFilter, type DataviewQuery, type DataviewResult } from "./lib/dataview";
 import { listRevisions, readRevision, readRevisionMeta, type Revision } from "./lib/revisions";
 import { vaultIdFor, getVault, findVaultByName, createVault, renameVault, deleteVault, addToVault, removeFromVault, listVaults, vaultSlugs } from "./lib/vault";
-import type { Vault } from "./lib/vault";
+import type { Vault, VaultVisibility } from "./lib/vault";
 import { isVaultEligible } from "./lib/commons";
 import { reconcileFromTalk, type ReconcileFromTalkResult } from "./lib/reconcile";
 import { buildWikiGraph, type GraphNode, type GraphEdge } from "./lib/graph-build";
@@ -1186,8 +1186,16 @@ export async function handleVaultPages(args: {
 export async function handleVaultCreate(args: {
   owner: string;
   name: string;
+  visibility?: VaultVisibility;
 }): Promise<{ vault: Vault }> {
-  const vault = await createVault(args.owner, args.name, "public");
+  const vis: VaultVisibility = args.visibility === "private" ? "private" : "public";
+  if (vis === "private") {
+    const allowed = await canSetPrivate({ id: `mcp:${args.owner}`, handle: args.owner });
+    if (!allowed) {
+      throw new Error("Creating a private vault requires a paid plan.");
+    }
+  }
+  const vault = await createVault(args.owner, args.name, vis);
   return { vault };
 }
 
@@ -3611,6 +3619,10 @@ export function createMcpServer(): McpServer {
       name: z
         .string()
         .describe("Display name for the new vault"),
+      visibility: z
+        .enum(["public", "private"])
+        .optional()
+        .describe("Vault visibility — 'public' (default) or 'private' (requires a paid plan)"),
     },
     annotations: {
       readOnlyHint: false,

@@ -777,13 +777,20 @@ export const MCP_TOOLS: ToolDef[] = [
     name: "vault_create",
     description: "Create a new named vault.",
     inputSchema: schema(
-      { name: str("Vault name") },
+      {
+        name: str("Vault name"),
+        visibility: {
+          type: "string",
+          description: "Vault visibility — 'public' (default) or 'private' (requires a paid plan)",
+          enum: ["public", "private"],
+        },
+      },
       ["name"],
     ),
     write: true,
     run: (a, p) => {
-      const args = a as { name: string };
-      return handleVaultCreate({ owner: p!.handle, name: args.name });
+      const args = a as { name: string; visibility?: "public" | "private" };
+      return handleVaultCreate({ owner: p!.handle, name: args.name, visibility: args.visibility });
     },
   },
   {
