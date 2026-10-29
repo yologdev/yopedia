@@ -112,6 +112,18 @@ vi.mock("../llm", async (importOriginal) => {
   };
 });
 
+// Mock the authz module so `canSetPrivate` can be toggled per test (defaults to
+// false — the fail-closed state matching a non-pro user).
+const mockCanSetPrivate = vi.fn(async (_principal?: unknown) => false);
+
+vi.mock("../authz", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../authz")>();
+  return {
+    ...actual,
+    canSetPrivate: (principal: unknown) => mockCanSetPrivate(principal),
+  };
+});
+
 import { fetchUrlContent } from "../fetch";
 import { fetchXPostContent } from "../x-post";
 const mockedFetchUrlContent = vi.mocked(fetchUrlContent);
@@ -138,6 +150,8 @@ beforeEach(async () => {
     title: `Mocked page for ${url}`,
     content: `Mocked content fetched from ${url}`,
   }));
+  // Reset authz mock to default fail-closed (non-pro)
+  mockCanSetPrivate.mockReset().mockResolvedValue(false);
 });
 
 afterEach(async () => {
@@ -4597,6 +4611,27 @@ describe("vault_create", () => {
     const vaults = await listVaults("bob");
     const matching = vaults.filter((v) => v.name === "Notes");
     expect(matching).toHaveLength(1);
+  });
+
+  it("rejects visibility: 'private' for a non-pro user", async () => {
+    mockCanSetPrivate.mockResolvedValue(false);
+    await expect(
+      handleVaultCreate({ owner: "alice", name: "Secret", visibility: "private" }),
+    ).rejects.toThrow(/paid plan/i);
+  });
+
+  it("creates a private vault when the user has a pro plan", async () => {
+    mockCanSetPrivate.mockResolvedValue(true);
+    const result = await handleVaultCreate({ owner: "alice", name: "Pro Vault", visibility: "private" });
+    expect(result.vault.visibility).toBe("private");
+    expect(result.vault.name).toBe("Pro Vault");
+  });
+
+  it("defaults to public when visibility is omitted", async () => {
+    const result = await handleVaultCreate({ owner: "alice", name: "Default Vis" });
+    expect(result.vault.visibility).toBe("public");
+    // canSetPrivate should never be called for a public vault
+    expect(mockCanSetPrivate).not.toHaveBeenCalled();
   });
 });
 
