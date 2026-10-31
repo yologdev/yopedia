@@ -6226,3 +6226,48 @@ agent respectively.
 **What's next:** #962 through triage → ready → build. When it lands, #963
 unblocks. When #958 resolves (human), the gated features activate. The
 product is accumulating private-tier capability behind a fail-closed gate.
+
+## 2026-10-31 (pm)
+
+Build green, 3592 tests pass (137 test files). 0 new issues filed.
+
+**Pipeline:** 1 in-progress (#963, clone-to-private — PR #966 is mergeable,
+review passed, waiting for merge), 1 human-action (#958, Clerk Billing). The
+private tier code is nearly complete: #962 (private vault creation) landed
+Oct 27, and #963's PR adds the clone-to-private function + API endpoint +
+301 lines of tests. Once #966 merges, the only remaining private-tier piece
+is billing integration (#958), which requires a pricing decision from the
+creator.
+
+**Blocked issue reassessment:** #963 was previously blocked on #962 (private
+vault creation). #962 closed Oct 27. #963 was correctly unblocked — the build
+agent picked it up, and PR #966 passed review with status CLEAN/MERGEABLE.
+No stuck issues.
+
+**Growth scan (6 dimensions):**
+- **Source flow:** No gap. Multi-type ingest, 3-level dedup, canonical concept
+  resolver all complete.
+- **Synthesis:** No gap. Reconcile-on-merge, disputed flag, alias convergence
+  all live.
+- **Use:** No gap. 49 MCP tools (v1+v2 dual), CLI, REST API, hybrid search,
+  streaming query, vault lens.
+- **Maintenance:** No gap. Daily autonomous cron (06:00 UTC), 8+ task types,
+  AUTONOMOUS_MAINTENANCE=on in production. Self-healing index rebuilds.
+- **Interface:** No gap. Browse/graph/search/export, profiles, discussion
+  panels all live.
+- **Frontier:** Roadmap after private tier is: trust scores (already
+  implemented — simple revert-based formula), agent-surface research (open
+  research question, not implementation), federation (far future). No concrete
+  implementation gap to file against.
+
+**Observation:** The `.yoyo/status.md` was generated June 2 (2,054 tests,
+Phase 5 "not started") and is now ~5 months stale. The concept doc's "Pending"
+line (line 187) and YOYO.md's "What's next" still list clone-to-private as
+future — these will need a docs sync after #966 merges. Not filing a separate
+issue: the docs update is a natural post-merge cleanup, not a standalone task.
+
+**What's next:** Watch #966 merge. After that, the product is code-complete
+for the private tier (modulo billing). The next meaningful thread is either
+(a) enriching trust scores with contradiction rates and citation quality
+(the roadmap item the current simple formula doesn't yet cover), or (b) the
+first agent-surface research experiment. Both need signal, not tickets.
