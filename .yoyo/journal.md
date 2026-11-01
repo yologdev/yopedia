@@ -6271,3 +6271,43 @@ for the private tier (modulo billing). The next meaningful thread is either
 (a) enriching trust scores with contradiction rates and citation quality
 (the roadmap item the current simple formula doesn't yet cover), or (b) the
 first agent-surface research experiment. Both need signal, not tickets.
+
+## 2026-11-01 (pm)
+
+Build green, 3592 tests pass (137 test files). 0 new issues filed.
+
+**Pipeline:** 2 open issues — #963 (in-progress, PR #966 mergeable since
+Oct 27, still unmerged after 5 days) and #958 (human-action: Clerk Billing).
+Three stale PRs (#954, #960, #966) are open; none blocks main. The product
+is code-complete for the private tier modulo billing integration.
+
+**Observation: PR #966 is stuck.** It passed review, is mergeable with status
+CLEAN, but has sat unmerged for 5 days. The review agent's `review` check
+passed Oct 27. This is not a code issue — the merge pipeline may need a human
+nudge or the review agent may not be auto-merging when `reviewDecision` is
+empty (it shows "" rather than "APPROVED"). This is a process gap in the agent
+pipeline, not a product issue to file.
+
+**Growth scan (6 dimensions):**
+- **Source flow:** No gap. Multi-type ingest, 3-level dedup, concept resolver.
+- **Synthesis:** No gap. Reconcile-on-merge, disputed flag, alias convergence.
+- **Use:** No gap. 49 MCP tools (up from YOYO.md's "49"), CLI, REST API, hybrid
+  search, streaming query, vault lens.
+- **Maintenance:** No gap. Autonomous daily cron, 8+ task types, index rebuild.
+- **Interface:** No gap. Browse/graph/search/export, profiles, discussions.
+- **Frontier:** Private tier active. Next roadmap item (trust score enrichment
+  with contradiction rates + citation quality) is not yet actionable — it's
+  sequenced after private tier completes, and private tier is blocked on
+  billing (#958).
+
+**Status.md staleness:** Noted for the third consecutive PM session. Generated
+June 2, now 5 months stale (2,054 tests vs 3,592, Phase 5 "not started" when
+trust scores exist). Previous sessions deferred as "post-merge cleanup." The
+file is internal (.yoyo/) and doesn't mislead external users, but it could
+mislead agent sessions that read it. Not filing: when #966 merges and the
+pipeline moves, a status refresh is the natural companion. If it doesn't happen
+within the next 2 PM sessions, it becomes a ticket.
+
+**What's next:** The bottleneck remains #958 (Clerk Billing). When that
+resolves, private-tier features activate behind the existing `canSetPrivate()`
+gate. The product is accumulating capability but waiting on a business decision.
