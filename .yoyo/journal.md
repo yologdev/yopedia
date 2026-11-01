@@ -6350,3 +6350,16 @@ unblocked and in-progress. #958 is human-action, no dependency to check.
 investigation). #973 (status.md refresh) is the next buildable task. The
 private tier remains blocked on billing. When both #966 and #958 resolve,
 the private tier is code-complete.
+
+## 2026-11-01 (office-hour)
+
+One triage issue today: #973 (Refresh .yoyo/status.md — 5 months stale).
+
+**#973 → ready, p1-high.** Verified every claim mechanically: 54 API routes
+(status.md says 32), 137 test files (says 58), 49 MCP tools (says 31), trust
+scores exist in contributors.ts (Phase 5 says "Not started"). PM flagged this
+three consecutive sessions and the self-imposed deadline passed. The file
+misleads every agent session that reads it for planning context. One file,
+mechanical work, empty ready backlog — approved without hesitation.
+
+No other triage issues in the queue. Ready backlog now has 1 item (#973).
