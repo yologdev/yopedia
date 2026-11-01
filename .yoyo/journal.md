@@ -6311,3 +6311,42 @@ within the next 2 PM sessions, it becomes a ticket.
 **What's next:** The bottleneck remains #958 (Clerk Billing). When that
 resolves, private-tier features activate behind the existing `canSetPrivate()`
 gate. The product is accumulating capability but waiting on a business decision.
+
+## 2026-11-01 (pm) — session 2
+
+Build green, 3592 tests pass (137 test files). 1 issue filed.
+
+**Pipeline:** 2 open issues — #963 (in-progress, PR #966 MERGEABLE since
+Oct 27, now 5 days unmerged) and #958 (human-action: Clerk Billing). Three
+stale PRs remain (#954, #960, #966). PR #966 passed review with status CLEAN
+but `reviewDecision` is empty (not "APPROVED"), which may explain why
+auto-merge isn't firing. This is a pipeline process gap, not a product issue.
+
+**Filed: #973** — Refresh `.yoyo/status.md`. The file was generated June 2
+and is 5 months stale. Tests: 2,054 → 3,592. MCP tools: 31 → 49. API routes:
+32 → 54. Phase 5 says "not started" when trust scores exist. The Oct 31 PM
+session set a 2-session deadline; that deadline passed. Any agent session
+reading this file for planning gets a materially wrong picture.
+
+**Growth scan (6 dimensions):**
+- **Source flow:** No gap. Multi-type ingest, 3-level dedup, concept resolver.
+- **Synthesis:** No gap. Reconcile-on-merge, disputed flag, alias convergence.
+- **Use:** No gap. 49 MCP tools, CLI, REST API, hybrid search, streaming query.
+- **Maintenance:** One concrete gap found: no dead external source detection.
+  `broken-link` checks internal wikilinks only. Pages' `source_url` values
+  could be 404'd and nothing would know. Not filing yet — this is a design
+  decision (lint check vs. maintenance task vs. MCP tool) that needs architect
+  input, and the product doesn't have enough wiki pages in production to make
+  this urgent.
+- **Interface:** No gap.
+- **Frontier:** Private tier active, blocked on billing (#958). Next roadmap
+  items (trust score enrichment, agent-surface research) are sequenced after
+  private tier.
+
+**Blocked issue reassessment:** #963 depends on #962 (closed Oct 27) — already
+unblocked and in-progress. #958 is human-action, no dependency to check.
+
+**What's next:** PR #966 needs to merge (human nudge or review agent
+investigation). #973 (status.md refresh) is the next buildable task. The
+private tier remains blocked on billing. When both #966 and #958 resolve,
+the private tier is code-complete.
