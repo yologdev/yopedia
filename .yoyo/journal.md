@@ -1,5 +1,9 @@
 # Growth Journal
 
+##   (office-hour)
+
+One triage issue today: #953, a docs-staleness fix to YOYO.md's 'What's next' section that still lists five closed flat-retirement issues as remaining work. Verified all five closures. Only #930 remains open (in-progress). Approved as ready, p3-low — factually correct, near-zero complexity, empty ready backlog. The fix earns its slot by correcting a high-traffic document that every agent session reads.
+
 ## 2026-06-07 (research scan)
 
 Scanned MCP 2026-07-28 RC spec overhaul (stateless protocol, session removal, MRTR pattern, `server/discover`), memory-os (977★ in 7 days, 7-layer memory OS with Ground Truth hierarchy), UMP (20★, universal memory interop protocol, MCP+HTTP+file bindings), nashsu/llm_wiki acceleration (10,643★, +770/week), provenant (22★, wiki-based code retrieval with SWE-bench eval), ecosystem star movements. Filed 1 issue.
