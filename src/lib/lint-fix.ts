@@ -722,6 +722,10 @@ export async function fixLintIssue(
       throw new FixValidationError(
         "Incomplete coverage cannot be auto-fixed. Re-ingest the source URL to refresh the page content.",
       );
+    case "dead-source":
+      throw new FixValidationError(
+        "Dead sources cannot be auto-fixed. Re-ingest from a new source or remove the dead source_url from frontmatter.",
+      );
     default:
       throw new FixValidationError(
         "Auto-fix not supported for this issue type",

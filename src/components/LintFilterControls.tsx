@@ -34,6 +34,7 @@ const checkTypeLabels: Record<LintIssue["type"], string> = {
   "disputed-page": "Disputed pages",
   "supersedes-dangling": "Dangling supersedes",
   "incomplete-coverage": "Incomplete coverage",
+  "dead-source": "Dead sources",
 };
 
 const severityFilterLabels: Record<SeverityFilter, string> = {
