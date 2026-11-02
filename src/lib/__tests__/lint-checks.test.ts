@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, afterEach } from "vitest";
+import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import fs from "fs/promises";
 import os from "os";
 import path from "path";
@@ -18,6 +18,8 @@ import {
   checkUnresolvedDiscussions,
   checkDisputedPages,
   checkSupersededDangling,
+  checkDeadSources,
+  MAX_DEAD_SOURCE_CHECKS,
   LOW_CONFIDENCE_THRESHOLD,
   STALE_VERIFICATION_DAYS,
   buildSummary,
@@ -1012,6 +1014,116 @@ describe("checkSupersededDangling", () => {
     );
 
     const issues = await checkSupersededDangling(["normal-page"]);
+    expect(issues).toEqual([]);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// checkDeadSources
+// ---------------------------------------------------------------------------
+describe("checkDeadSources", () => {
+  let originalFetch: typeof globalThis.fetch;
+
+  beforeEach(() => {
+    originalFetch = globalThis.fetch;
+  });
+
+  afterEach(() => {
+    globalThis.fetch = originalFetch;
+  });
+
+  it("flags a page whose source_url returns 404 as warning", async () => {
+    await createPageWithIndex("gone-page", "Gone Page", {
+      source_url: "https://example.com/gone",
+      created: "2024-01-01",
+    });
+
+    globalThis.fetch = vi.fn().mockResolvedValue(new Response(null, { status: 404 }));
+
+    const issues = await checkDeadSources(["gone-page"]);
+    expect(issues).toHaveLength(1);
+    expect(issues[0].type).toBe("dead-source");
+    expect(issues[0].slug).toBe("gone-page");
+    expect(issues[0].severity).toBe("warning");
+    expect(issues[0].message).toContain("404");
+    expect(issues[0].suggestion).toBeDefined();
+  });
+
+  it("flags a page whose source_url returns 500 as info", async () => {
+    await createPageWithIndex("error-page", "Error Page", {
+      source_url: "https://example.com/error",
+      created: "2024-01-01",
+    });
+
+    globalThis.fetch = vi.fn().mockResolvedValue(new Response(null, { status: 500 }));
+
+    const issues = await checkDeadSources(["error-page"]);
+    expect(issues).toHaveLength(1);
+    expect(issues[0].type).toBe("dead-source");
+    expect(issues[0].slug).toBe("error-page");
+    expect(issues[0].severity).toBe("info");
+    expect(issues[0].message).toContain("500");
+    expect(issues[0].message).toContain("transient");
+  });
+
+  it("does NOT flag a page whose source_url returns 200", async () => {
+    await createPageWithIndex("live-page", "Live Page", {
+      source_url: "https://example.com/live",
+      created: "2024-01-01",
+    });
+
+    globalThis.fetch = vi.fn().mockResolvedValue(new Response("OK", { status: 200 }));
+
+    const issues = await checkDeadSources(["live-page"]);
+    expect(issues).toEqual([]);
+  });
+
+  it("skips pages without a source_url", async () => {
+    await createPageWithIndex("no-source", "No Source", {
+      created: "2024-01-01",
+    });
+
+    const mockFetch = vi.fn();
+    globalThis.fetch = mockFetch;
+
+    const issues = await checkDeadSources(["no-source"]);
+    expect(issues).toEqual([]);
+    // fetch should not have been called at all
+    expect(mockFetch).not.toHaveBeenCalled();
+  });
+
+  it("respects the cap of MAX_DEAD_SOURCE_CHECKS pages", async () => {
+    // Create more pages than the cap
+    const count = MAX_DEAD_SOURCE_CHECKS + 5;
+    const slugs: string[] = [];
+    for (let i = 0; i < count; i++) {
+      const slug = `capped-page-${i}`;
+      slugs.push(slug);
+      await createPageWithIndex(slug, `Capped Page ${i}`, {
+        source_url: `https://example.com/${slug}`,
+        created: "2024-01-01",
+      });
+    }
+
+    // All return 404
+    const mockFetch = vi.fn().mockResolvedValue(new Response(null, { status: 404 }));
+    globalThis.fetch = mockFetch;
+
+    const issues = await checkDeadSources(slugs);
+    // Should be capped at MAX_DEAD_SOURCE_CHECKS
+    expect(issues.length).toBeLessThanOrEqual(MAX_DEAD_SOURCE_CHECKS);
+    expect(mockFetch).toHaveBeenCalledTimes(MAX_DEAD_SOURCE_CHECKS);
+  });
+
+  it("skips pages when fetch throws (network error)", async () => {
+    await createPageWithIndex("timeout-page", "Timeout Page", {
+      source_url: "https://example.com/timeout",
+      created: "2024-01-01",
+    });
+
+    globalThis.fetch = vi.fn().mockRejectedValue(new Error("network timeout"));
+
+    const issues = await checkDeadSources(["timeout-page"]);
     expect(issues).toEqual([]);
   });
 });

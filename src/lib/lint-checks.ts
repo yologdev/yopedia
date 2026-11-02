@@ -28,6 +28,7 @@ export const ALL_CHECK_TYPES = [
   "disputed-page",
   "supersedes-dangling",
   "incomplete-coverage",
+  "dead-source",
 ] as const satisfies readonly LintIssue["type"][];
 
 // Files that are part of the wiki infrastructure, not content pages.
@@ -991,6 +992,87 @@ export async function checkIncompleteCoverage(
       }
     } catch (err) {
       logger.warn("lint", `LLM incomplete-coverage check failed for ${slug}:`, err);
+    }
+  }
+
+  return issues;
+}
+
+// ---------------------------------------------------------------------------
+// Dead-source check — flags pages whose source_url returns 4xx/5xx
+// ---------------------------------------------------------------------------
+
+/** Max pages to probe per lint run to avoid hammering external servers. */
+export const MAX_DEAD_SOURCE_CHECKS = 20;
+
+/** Timeout (ms) for HEAD requests when probing source URLs. */
+const DEAD_SOURCE_TIMEOUT_MS = 10_000;
+
+/**
+ * Check for dead sources — pages whose `source_url` points to a URL that
+ * returns a 4xx or 5xx status code. A dead source erodes provenance: the
+ * page's cited origin is no longer reachable.
+ *
+ * At most {@link MAX_DEAD_SOURCE_CHECKS} pages are checked per run, shuffled
+ * so successive runs cover different pages. Requests are sequential to avoid
+ * parallel-bombing external servers.
+ */
+export async function checkDeadSources(
+  diskSlugs: string[],
+): Promise<LintIssue[]> {
+  // Collect slugs that have a source_url in frontmatter
+  const candidates: { slug: string; sourceUrl: string }[] = [];
+  for (const slug of diskSlugs) {
+    const page = await readWikiPageWithFrontmatter(slug);
+    if (!page) continue;
+    const url = page.frontmatter.source_url;
+    if (typeof url === "string" && url.length > 0) {
+      candidates.push({ slug, sourceUrl: url });
+    }
+  }
+
+  if (candidates.length === 0) return [];
+
+  // Shuffle so successive runs cover different pages, then cap
+  const shuffled = [...candidates];
+  for (let i = shuffled.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]];
+  }
+  const sample = shuffled.slice(0, MAX_DEAD_SOURCE_CHECKS);
+
+  const issues: LintIssue[] = [];
+
+  // Sequential to rate-limit external requests
+  for (const { slug, sourceUrl } of sample) {
+    try {
+      const resp = await fetch(sourceUrl, {
+        method: "HEAD",
+        signal: AbortSignal.timeout(DEAD_SOURCE_TIMEOUT_MS),
+        redirect: "follow",
+      });
+
+      const status = resp.status;
+      if (status >= 400 && status < 500) {
+        issues.push({
+          type: "dead-source",
+          slug,
+          message: `Source URL returned ${status}: ${sourceUrl}`,
+          severity: "warning",
+          suggestion: `Re-ingest "${slug}" from a new source or remove the dead source_url`,
+        });
+      } else if (status >= 500) {
+        issues.push({
+          type: "dead-source",
+          slug,
+          message: `Source URL returned ${status} (may be transient): ${sourceUrl}`,
+          severity: "info",
+          suggestion: `Re-check later; if persistent, re-ingest "${slug}" from a new source or remove the dead source_url`,
+        });
+      }
+    } catch {
+      // Network errors, timeouts, DNS failures — skip silently.
+      // These are not the same as a confirmed 4xx/5xx.
     }
   }
 
