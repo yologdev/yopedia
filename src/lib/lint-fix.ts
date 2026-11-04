@@ -658,6 +658,85 @@ export async function fixSupersededDangling(slug: string, author = "lint-fix"): 
 }
 
 // ---------------------------------------------------------------------------
+// Dead-source fix — clear source_url for confirmed-dead (4xx) sources.
+// ---------------------------------------------------------------------------
+
+/**
+ * Fix a dead-source lint issue by clearing `source_url` from frontmatter.
+ *
+ * Only acts on confirmed-dead sources (4xx). The lint check emits severity
+ * "warning" for 4xx and "info" for 5xx (transient). The issue's `message`
+ * carries the status code: "Source URL returned NNN: <url>". We extract it
+ * and refuse to clear for 5xx (transient — the server may recover).
+ *
+ * Safe: the page content is preserved; only the dead provenance link is
+ * removed. Re-verified before clearing: if `source_url` is already absent,
+ * we report a no-op.
+ */
+export async function fixDeadSource(
+  slug: string,
+  message?: string,
+  author = "lint-fix",
+): Promise<FixResult> {
+  if (!slug) {
+    throw new FixValidationError("Missing required field: slug");
+  }
+
+  // Guard: refuse to clear for 5xx (transient). The lint issue's message
+  // contains "Source URL returned NNN" — extract the status code.
+  if (message) {
+    const statusMatch = message.match(/returned (\d{3})/);
+    if (statusMatch) {
+      const status = parseInt(statusMatch[1], 10);
+      if (status >= 500) {
+        return {
+          success: false,
+          slug,
+          message: `Source URL returned ${status} (transient) — not clearing source_url`,
+        };
+      }
+    }
+  }
+
+  const page = await readWikiPageWithFrontmatter(slug);
+  if (!page) {
+    throw new FixNotFoundError(`Page not found: ${slug}`);
+  }
+
+  const sourceUrl = page.frontmatter.source_url;
+  if (typeof sourceUrl !== "string" || sourceUrl === "") {
+    return {
+      success: false,
+      slug,
+      message: `No source_url to clear on "${slug}"`,
+    };
+  }
+
+  const fm = { ...page.frontmatter };
+  delete fm.source_url;
+
+  const summaryMatch = page.body.match(/^#\s+.+\n+(.+)/m);
+  const summary = summaryMatch ? summaryMatch[1].slice(0, 120) : slug;
+
+  await writeWikiPageWithSideEffects({
+    slug,
+    title: page.title,
+    content: serializeFrontmatter(fm, page.body),
+    summary,
+    logOp: "edit",
+    logDetails: () => `auto-fix: cleared dead source_url "${sourceUrl}"`,
+    crossRefSource: null,
+    author,
+  });
+
+  return {
+    success: true,
+    slug,
+    message: `Cleared dead source_url "${sourceUrl}" from "${slug}"`,
+  };
+}
+
+// ---------------------------------------------------------------------------
 // Dispatcher
 // ---------------------------------------------------------------------------
 
@@ -723,9 +802,7 @@ export async function fixLintIssue(
         "Incomplete coverage cannot be auto-fixed. Re-ingest the source URL to refresh the page content.",
       );
     case "dead-source":
-      throw new FixValidationError(
-        "Dead sources cannot be auto-fixed. Re-ingest from a new source or remove the dead source_url from frontmatter.",
-      );
+      return fixDeadSource(slug, message, author);
     default:
       throw new FixValidationError(
         "Auto-fix not supported for this issue type",
