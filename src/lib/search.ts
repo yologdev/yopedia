@@ -25,6 +25,8 @@ import { getOwnerIndex } from "./owner-index";
 import { getBacklinkIndex } from "./backlink-index";
 import { relatedByVector, searchByVector } from "./embeddings";
 import { RELATED_PAGES_LIMIT, RELATED_MIN_SCORE, RELATED_CANDIDATE_POOL } from "./constants";
+import { tokenize, bm25Score } from "./bm25";
+import type { CorpusStats } from "./bm25";
 
 // ---------------------------------------------------------------------------
 // Cross-referencing helpers
@@ -315,7 +317,7 @@ export interface ContentSearchResult {
   summary: string;
   /** Short snippet showing the match context */
   snippet: string;
-  /** Relevance score — number of matching query terms */
+  /** Relevance score — BM25 with title boost (higher = more relevant) */
   score: number;
   /** True when this result came from fuzzy (typo-tolerant) matching */
   fuzzy?: boolean;
@@ -512,14 +514,6 @@ export async function searchWikiContent(
   // only via an `agent:` scope).
   const excludedSlugs = await searchExcludedSlugSet(/* includeAgentScoped */ !scope);
 
-  const scored: Array<{
-    slug: string;
-    title: string;
-    summary: string;
-    snippet: string;
-    score: number;
-  }> = [];
-
   // Cheap index-only filters first (skip-list, scope, artifacts/agent-scoped),
   // then read the surviving candidates' bodies in parallel (bounded). The read
   // used to run serially inside this loop — the dominant cost of content search.
@@ -536,23 +530,77 @@ export async function searchWikiContent(
     (entry) => readWikiPage(entry.slug),
   );
 
+  // --- BM25 corpus stats (built from already-read content, no extra I/O) ------
+  // Build the corpus stats inline: tokenize each candidate's full content and
+  // title, compute document frequencies, and average document length. This uses
+  // the same tokenizer as bm25.ts (CJK-aware, stop-word filtering).
+  const queryTokens = tokenize(query);
+  const corpusDocTokens = new Map<string, string[]>();
+  const corpusTitleTokens = new Map<string, string[]>();
+  const corpusDf = new Map<string, number>();
+  let totalLen = 0;
+  let corpusN = 0;
+
   for (let i = 0; i < candidates.length; i++) {
     const slug = candidates[i].slug;
+    const page = candidatePages[i];
+    if (!page) continue;
+
+    const titleMatch = page.content.match(/^#\s+(.+)$/m);
+    const title = titleMatch ? titleMatch[1].trim() : slug;
+
+    const tokens = tokenize(page.content);
+    corpusDocTokens.set(slug, tokens);
+    corpusTitleTokens.set(slug, tokenize(title));
+    totalLen += tokens.length;
+    corpusN++;
+
+    const seen = new Set<string>();
+    for (const tok of tokens) {
+      if (!seen.has(tok)) {
+        seen.add(tok);
+        corpusDf.set(tok, (corpusDf.get(tok) ?? 0) + 1);
+      }
+    }
+  }
+
+  const corpusStats: CorpusStats = {
+    N: corpusN,
+    avgdl: corpusN > 0 ? totalLen / corpusN : 0,
+    df: corpusDf,
+    docTokens: corpusDocTokens,
+    titleTokens: corpusTitleTokens,
+  };
+
+  // --- Score candidates with BM25 -------------------------------------------
+  const scored: Array<{
+    slug: string;
+    title: string;
+    summary: string;
+    snippet: string;
+    score: number;
+  }> = [];
+
+  for (let i = 0; i < candidates.length; i++) {
+    const entry = candidates[i];
+    const slug = entry.slug;
     const page = candidatePages[i];
     if (!page) continue;
     const content = page.content;
 
     const lower = content.toLowerCase();
 
-    // Score = how many query terms appear anywhere in the raw file (title,
-    // frontmatter tags, or body) — keeps recall wide; the snippet is drawn from
-    // the body separately below.
-    let score = 0;
+    // Pre-filter: at least one query term must appear as a substring. This keeps
+    // recall wide (matching substrings, frontmatter tags, etc.) while BM25
+    // handles ranking.
+    let hasMatch = false;
     for (const term of terms) {
-      if (lower.includes(term)) score++;
+      if (lower.includes(term)) { hasMatch = true; break; }
     }
+    if (!hasMatch) continue;
 
-    if (score === 0) continue;
+    // BM25 score with title boost (same algorithm as query-search.ts)
+    const score = bm25Score(entry, queryTokens, corpusStats);
 
     // Extract title from first heading or slug
     const titleMatch = content.match(/^#\s+(.+)$/m);
@@ -592,7 +640,7 @@ export async function searchWikiContent(
     scored.push({ slug, title, summary, snippet, score });
   }
 
-  // Sort by score descending, then alphabetically by title
+  // Sort by BM25 score descending, then alphabetically by title
   scored.sort((a, b) => b.score - a.score || a.title.localeCompare(b.title));
 
   return scored.slice(0, maxResults);
@@ -698,11 +746,27 @@ export async function fuzzySearchWikiContent(
       140,
     );
 
-    fuzzyResults.push({ slug, title, summary, snippet, score: 0, fuzzy: true });
+    // Score by edit-distance quality: for each query term, find the closest
+    // word in the content and compute a similarity ratio. Average across terms
+    // gives a score in (0, 1] where 1 = perfect match.
+    const textWords = content.toLowerCase().split(/[^a-z0-9]+/).filter(Boolean);
+    let totalSim = 0;
+    for (const term of terms) {
+      let bestDist = term.length; // worst case: full length
+      for (const tw of textWords) {
+        const d = levenshteinDistance(term, tw);
+        if (d < bestDist) bestDist = d;
+        if (d === 0) break; // perfect match found
+      }
+      totalSim += 1 - bestDist / Math.max(term.length, 1);
+    }
+    const score = terms.length > 0 ? totalSim / terms.length : 0;
+
+    fuzzyResults.push({ slug, title, summary, snippet, score, fuzzy: true });
   }
 
-  // Sort fuzzy results alphabetically by title
-  fuzzyResults.sort((a, b) => a.title.localeCompare(b.title));
+  // Sort fuzzy results by edit-distance quality score descending, then by title
+  fuzzyResults.sort((a, b) => b.score - a.score || a.title.localeCompare(b.title));
 
   // Combine: exact first, then fuzzy to fill up to maxResults
   const remaining = maxResults - exactResults.length;
