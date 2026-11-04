@@ -60,6 +60,7 @@ import {
   fixMissingConceptPage,
   fixStalePage,
   fixUnmigratedPage,
+  fixDeadSource,
   fixLintIssue,
   FixValidationError,
   FixNotFoundError,
@@ -986,6 +987,148 @@ describe("fixLintIssue", () => {
     expect(result.slug).toBe("old-page");
     expect(result.message).toContain("yopedia defaults");
     expect(mockedWriteWikiPageWithSideEffects).toHaveBeenCalledOnce();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// fixDeadSource
+// ---------------------------------------------------------------------------
+
+describe("fixDeadSource", () => {
+  it("throws FixValidationError for empty slug", async () => {
+    await expect(fixDeadSource("")).rejects.toThrow(FixValidationError);
+    await expect(fixDeadSource("")).rejects.toThrow(
+      "Missing required field: slug",
+    );
+  });
+
+  it("throws FixNotFoundError for missing page", async () => {
+    mockedReadWikiPageWithFrontmatter.mockResolvedValue(null);
+    await expect(fixDeadSource("no-such-page")).rejects.toThrow(
+      FixNotFoundError,
+    );
+    await expect(fixDeadSource("no-such-page")).rejects.toThrow(
+      "Page not found: no-such-page",
+    );
+  });
+
+  it("clears source_url from frontmatter for a 4xx dead source", async () => {
+    mockedReadWikiPageWithFrontmatter.mockResolvedValue({
+      slug: "dead-page",
+      title: "Dead Page",
+      content: '---\nsource_url: "https://gone.example.com"\n---\n\n# Dead Page\n\nContent here.',
+      path: "/wiki/dead-page.md",
+      frontmatter: { source_url: "https://gone.example.com" },
+      body: "# Dead Page\n\nContent here.",
+    });
+
+    const result = await fixDeadSource(
+      "dead-page",
+      "Source URL returned 404: https://gone.example.com",
+    );
+
+    expect(result.success).toBe(true);
+    expect(result.slug).toBe("dead-page");
+    expect(result.message).toContain("Cleared dead source_url");
+    expect(result.message).toContain("https://gone.example.com");
+    expect(mockedWriteWikiPageWithSideEffects).toHaveBeenCalledOnce();
+    // The written content should NOT contain source_url
+    const written = mockedWriteWikiPageWithSideEffects.mock.calls[0][0];
+    expect(written.content).not.toContain("source_url");
+  });
+
+  it("skips clearing for 5xx (transient) sources", async () => {
+    const result = await fixDeadSource(
+      "transient-page",
+      "Source URL returned 503 (may be transient): https://example.com/down",
+    );
+
+    expect(result.success).toBe(false);
+    expect(result.message).toContain("transient");
+    expect(result.message).toContain("503");
+    // Should NOT try to read or write the page
+    expect(mockedReadWikiPageWithFrontmatter).not.toHaveBeenCalled();
+    expect(mockedWriteWikiPageWithSideEffects).not.toHaveBeenCalled();
+  });
+
+  it("returns no-op when source_url is already absent", async () => {
+    mockedReadWikiPageWithFrontmatter.mockResolvedValue({
+      slug: "no-source",
+      title: "No Source",
+      content: "---\n---\n\n# No Source\n\nSome content.",
+      path: "/wiki/no-source.md",
+      frontmatter: {},
+      body: "# No Source\n\nSome content.",
+    });
+
+    const result = await fixDeadSource(
+      "no-source",
+      "Source URL returned 404: https://example.com",
+    );
+
+    expect(result.success).toBe(false);
+    expect(result.message).toContain("No source_url to clear");
+    expect(mockedWriteWikiPageWithSideEffects).not.toHaveBeenCalled();
+  });
+
+  it("clears source_url even without a message (no status guard)", async () => {
+    mockedReadWikiPageWithFrontmatter.mockResolvedValue({
+      slug: "dead-page",
+      title: "Dead Page",
+      content: '---\nsource_url: "https://dead.example.com"\n---\n\n# Dead Page\n\nBody.',
+      path: "/wiki/dead-page.md",
+      frontmatter: { source_url: "https://dead.example.com" },
+      body: "# Dead Page\n\nBody.",
+    });
+
+    const result = await fixDeadSource("dead-page");
+
+    expect(result.success).toBe(true);
+    expect(result.message).toContain("Cleared dead source_url");
+    expect(mockedWriteWikiPageWithSideEffects).toHaveBeenCalledOnce();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// fixLintIssue dispatcher — dead-source
+// ---------------------------------------------------------------------------
+
+describe("fixLintIssue — dead-source dispatch", () => {
+  it("dispatches dead-source to fixDeadSource and clears source_url", async () => {
+    mockedReadWikiPageWithFrontmatter.mockResolvedValue({
+      slug: "some-page",
+      title: "Some Page",
+      content: '---\nsource_url: "https://404.example.com"\n---\n\n# Some Page\n\nBody text.',
+      path: "/wiki/some-page.md",
+      frontmatter: { source_url: "https://404.example.com" },
+      body: "# Some Page\n\nBody text.",
+    });
+
+    const result = await fixLintIssue(
+      "dead-source",
+      "some-page",
+      undefined,
+      "Source URL returned 404: https://404.example.com",
+    );
+
+    expect(result.success).toBe(true);
+    expect(result.slug).toBe("some-page");
+    expect(mockedWriteWikiPageWithSideEffects).toHaveBeenCalledOnce();
+    const written = mockedWriteWikiPageWithSideEffects.mock.calls[0][0];
+    expect(written.content).not.toContain("source_url");
+  });
+
+  it("does not fix dead-source with 5xx status (transient)", async () => {
+    const result = await fixLintIssue(
+      "dead-source",
+      "some-page",
+      undefined,
+      "Source URL returned 502 (may be transient): https://example.com/api",
+    );
+
+    expect(result.success).toBe(false);
+    expect(result.message).toContain("transient");
+    expect(mockedWriteWikiPageWithSideEffects).not.toHaveBeenCalled();
   });
 });
 

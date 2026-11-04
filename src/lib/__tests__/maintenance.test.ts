@@ -374,6 +374,57 @@ describe("scanForMaintenance", () => {
       expect.objectContaining({ slug: "high-conf", op: "staleness" }),
     );
   });
+
+  it("enqueues a dead-source fix for a page with a 4xx source_url", async () => {
+    await seed("dead-src", { source_url: "https://dead.example.com/gone" });
+
+    // Mock fetch to return 404 for the dead source URL
+    const originalFetch = globalThis.fetch;
+    globalThis.fetch = (async () => ({ status: 404 })) as unknown as typeof fetch;
+    try {
+      const tasks = await scanForMaintenance();
+      expect(tasks).toContainEqual({
+        kind: "maintain",
+        op: "fix",
+        slug: "dead-src",
+        lintType: "dead-source",
+      });
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+  });
+
+  it("does NOT enqueue a dead-source fix for a 5xx (transient) source_url", async () => {
+    await seed("transient-src", { source_url: "https://example.com/down" });
+
+    // Mock fetch to return 503
+    const originalFetch = globalThis.fetch;
+    globalThis.fetch = (async () => ({ status: 503 })) as unknown as typeof fetch;
+    try {
+      const tasks = await scanForMaintenance();
+      expect(tasks).not.toContainEqual(
+        expect.objectContaining({ slug: "transient-src", lintType: "dead-source" }),
+      );
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+  });
+
+  it("does NOT enqueue a dead-source fix for a healthy source_url", async () => {
+    await seed("healthy-src", { source_url: "https://example.com/ok" });
+
+    // Mock fetch to return 200
+    const originalFetch = globalThis.fetch;
+    globalThis.fetch = (async () => ({ status: 200 })) as unknown as typeof fetch;
+    try {
+      const tasks = await scanForMaintenance();
+      expect(tasks).not.toContainEqual(
+        expect.objectContaining({ slug: "healthy-src", lintType: "dead-source" }),
+      );
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+  });
 });
 
 describe("rebuildDerivedIndexes — commons index (#398)", () => {

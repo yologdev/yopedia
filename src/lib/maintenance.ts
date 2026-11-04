@@ -29,7 +29,7 @@
  */
 
 import { listWikiPages, readWikiPageWithFrontmatter } from "./wiki";
-import { getOnDiskSlugs, checkMissingCrossRefs, LOW_CONFIDENCE_THRESHOLD } from "./lint-checks";
+import { getOnDiskSlugs, checkMissingCrossRefs, checkDeadSources, LOW_CONFIDENCE_THRESHOLD } from "./lint-checks";
 import { listThreads } from "./talk";
 import { isAgentHandle } from "./agents";
 import { extractWikiLinks } from "./links";
@@ -228,6 +228,30 @@ export async function scanForMaintenance(
         slug: issue.slug,
         lintType: "missing-crossref",
         targetSlug: issue.target,
+      });
+    }
+  }
+
+  // ── Dead sources (confirmed 4xx only — 5xx are transient) ──
+  // Run the dead-source lint check and emit fix tasks for pages with 4xx
+  // source URLs. The check makes real HTTP requests (sequential, capped), so
+  // it runs last. Only consider pages that passed guardrails and don't already
+  // have a task.
+  if (tasks.length < cap) {
+    const taskedSlugs = new Set(tasks.map((t) => t.kind === "maintain" ? t.slug : ""));
+    const deadIssues = await checkDeadSources(diskSlugs);
+    for (const issue of deadIssues) {
+      if (tasks.length >= cap) break;
+      if (!eligibleSlugs.has(issue.slug)) continue;
+      if (taskedSlugs.has(issue.slug)) continue;
+      // Only auto-fix confirmed dead (4xx → severity "warning").
+      // Transient 5xx (severity "info") are skipped.
+      if (issue.severity !== "warning") continue;
+      tasks.push({
+        kind: "maintain",
+        op: "fix",
+        slug: issue.slug,
+        lintType: "dead-source",
       });
     }
   }
