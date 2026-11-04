@@ -293,7 +293,7 @@ describe("searchWikiContent", () => {
     expect(results2[0].slug).toBe("test-page");
   });
 
-  it("scores by number of matching terms (OR semantics)", async () => {
+  it("ranks pages with more matching terms higher (BM25 scoring)", async () => {
     await ensureDirectories();
     await writeWikiPage("both-terms", "# Both Terms\n\nThis page has alpha and beta content.");
     await writeWikiPage("one-term", "# One Term\n\nThis page only has alpha content.");
@@ -304,9 +304,59 @@ describe("searchWikiContent", () => {
 
     const results = await searchWikiContent("alpha beta");
     expect(results).toHaveLength(2);
-    // "both-terms" should rank first (score 2 vs score 1)
+    // "both-terms" should rank first (matches both query terms)
     expect(results[0].slug).toBe("both-terms");
     expect(results[1].slug).toBe("one-term");
+    // BM25 scores are positive, not simple term counts
+    expect(results[0].score).toBeGreaterThan(0);
+    expect(results[1].score).toBeGreaterThan(0);
+    expect(results[0].score).toBeGreaterThan(results[1].score);
+  });
+
+  it("BM25: higher term frequency ranks higher", async () => {
+    await ensureDirectories();
+    // "rust" appears 3 times in dense-page, 1 time in sparse-page
+    await writeWikiPage(
+      "dense-page",
+      "# Dense Page\n\nRust is great. Rust is fast. Rust is safe.",
+    );
+    await writeWikiPage(
+      "sparse-page",
+      "# Sparse Page\n\nRust is one of many programming languages available today for systems work.",
+    );
+    await updateIndex([
+      { title: "Dense Page", slug: "dense-page", summary: "s" },
+      { title: "Sparse Page", slug: "sparse-page", summary: "s" },
+    ]);
+
+    const results = await searchWikiContent("rust");
+    expect(results).toHaveLength(2);
+    // Page with higher term frequency should rank first
+    expect(results[0].slug).toBe("dense-page");
+    expect(results[0].score).toBeGreaterThan(results[1].score);
+  });
+
+  it("BM25: title boost rewards pages whose title matches the query", async () => {
+    await ensureDirectories();
+    // Both contain "quantum" in body, but only title-match has it in the title
+    await writeWikiPage(
+      "quantum-computing",
+      "# Quantum Computing\n\nQuantum computing uses qubits.",
+    );
+    await writeWikiPage(
+      "physics-overview",
+      "# Physics Overview\n\nThis covers quantum mechanics and more.",
+    );
+    await updateIndex([
+      { title: "Quantum Computing", slug: "quantum-computing", summary: "s" },
+      { title: "Physics Overview", slug: "physics-overview", summary: "s" },
+    ]);
+
+    const results = await searchWikiContent("quantum");
+    expect(results).toHaveLength(2);
+    // Title-matching page ranks first due to title boost
+    expect(results[0].slug).toBe("quantum-computing");
+    expect(results[0].score).toBeGreaterThan(results[1].score);
   });
 
   it("sorts alphabetically by title when scores are equal", async () => {
@@ -1058,6 +1108,34 @@ describe("fuzzySearchWikiContent", () => {
     const slugs = results.map((r) => r.slug);
     expect(slugs).toContain("ai-page");
     expect(slugs).not.toContain("xy-page");
+  });
+
+  it("fuzzy results have non-zero scores ranked by match quality", async () => {
+    await ensureDirectories();
+    // "atention" is 1 edit from "attention" (close match)
+    await writeWikiPage("close-typo", "# Close Typo\n\nAtention mechanisms are key.");
+    // "attnetion" is 2 edits from "attention" (more distant match)
+    await writeWikiPage("far-typo", "# Far Typo\n\nAttnetion mechanisms are key.");
+    await updateIndex([
+      { title: "Close Typo", slug: "close-typo", summary: "s" },
+      { title: "Far Typo", slug: "far-typo", summary: "s" },
+    ]);
+
+    const results = await fuzzySearchWikiContent("attention");
+    const fuzzyResults = results.filter((r) => r.fuzzy);
+    expect(fuzzyResults.length).toBeGreaterThanOrEqual(1);
+    // All fuzzy results should have non-zero scores
+    for (const r of fuzzyResults) {
+      expect(r.score).toBeGreaterThan(0);
+    }
+    // The closer typo should rank higher
+    if (fuzzyResults.length >= 2) {
+      const closeResult = fuzzyResults.find((r) => r.slug === "close-typo");
+      const farResult = fuzzyResults.find((r) => r.slug === "far-typo");
+      if (closeResult && farResult) {
+        expect(closeResult.score).toBeGreaterThan(farResult.score);
+      }
+    }
   });
 });
 
