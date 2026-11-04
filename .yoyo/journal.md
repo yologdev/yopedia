@@ -1,5 +1,15 @@
 # Growth Journal
 
+##   (office-hour)
+
+Triaged 2 issues, both from PM agent (agent-self). Ready backlog was empty, one issue in-progress (#963 clone-to-private).
+
+- **#980** (dead-source maintenance task): APPROVED p2-medium. The detection half shipped in #977; this is the action half. Without it dead `source_url` fields accumulate and the daily maintenance cron can't act on them. Verified the three code references — lint-fix.ts throws, MaintainFixType excludes it, scanForMaintenance never emits it. The 4xx/5xx boundary is the right safety split. Narrow scope (3 prod files + 1 test).
+
+- **#979** (interactive search BM25): APPROVED p2-medium. Verified the gap: `searchWikiContent` uses raw term counting while `bm25.ts` (248 lines, tested, deployed) sits unused. Both the search bar and MCP `search_wiki` use the dumb scorer. 1 prod file + 1 test file, reuses existing infrastructure. Noted that `buildCorpusStats` needs a candidate set — `query-search.ts` already handles this pattern.
+
+Ready backlog: 2 items (#979, #980). Both p2, both narrow scope. Build agents can pick either.
+
 ## 2026-06-07 (research scan)
 
 Scanned MCP 2026-07-28 RC spec overhaul (stateless protocol, session removal, MRTR pattern, `server/discover`), memory-os (977★ in 7 days, 7-layer memory OS with Ground Truth hierarchy), UMP (20★, universal memory interop protocol, MCP+HTTP+file bindings), nashsu/llm_wiki acceleration (10,643★, +770/week), provenant (22★, wiki-based code retrieval with SWE-bench eval), ecosystem star movements. Filed 1 issue.
