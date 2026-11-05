@@ -125,6 +125,7 @@ export async function POST(req: Request, { params }: RouteParams) {
       sourceUrl?: unknown;
       asOwner?: unknown;
       vaultId?: unknown;
+      tags?: unknown;
     };
     try {
       body = await req.json();
@@ -184,6 +185,23 @@ export async function POST(req: Request, { params }: RouteParams) {
     const sourceUrl =
       typeof body.sourceUrl === "string" && /^https?:\/\//.test(body.sourceUrl.trim())
         ? body.sourceUrl.trim()
+        : undefined;
+
+    // Validate tags if provided: must be an array of strings.
+    if (body.tags !== undefined) {
+      if (
+        !Array.isArray(body.tags) ||
+        !body.tags.every((t: unknown) => typeof t === "string")
+      ) {
+        return NextResponse.json(
+          { error: "tags must be an array of strings if provided" },
+          { status: 400 },
+        );
+      }
+    }
+    const tags: string[] | undefined =
+      Array.isArray(body.tags) && body.tags.length > 0
+        ? (body.tags as string[])
         : undefined;
 
     // Resolve + validate the target vault BEFORE enqueue (ownership is a cheap,
@@ -252,6 +270,7 @@ export async function POST(req: Request, { params }: RouteParams) {
       ...(learningFor ? { learningFor } : {}),
       ...(validatedVault ? { vaultId: validatedVault } : {}),
       ...(title && title.trim() ? { title: title.trim() } : {}),
+      ...(tags ? { tags } : {}),
       jobId,
     };
     let task: Task;
@@ -276,6 +295,7 @@ export async function POST(req: Request, { params }: RouteParams) {
       triggeredBy,
       ...(pageType ? { pageType } : {}),
       ...(sourceType ? { sourceType } : {}),
+      ...(tags ? { tags } : {}),
     };
     return await enqueueOrInline(jobId, task, async () => {
       const result = imageUrl
