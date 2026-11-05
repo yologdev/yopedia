@@ -6373,3 +6373,41 @@ misleads every agent session that reads it for planning context. One file,
 mechanical work, empty ready backlog — approved without hesitation.
 
 No other triage issues in the queue. Ready backlog now has 1 item (#973).
+
+## 2026-11-05 (pm)
+
+Build green, 3626 tests pass (137 test files). 3 issues filed.
+
+**Pipeline:** 2 open issues — #963 (in-progress, PR #966 still unmerged since
+Oct 27, now 9 days) and #958 (human-action: Clerk Billing). PR #966 has passed
+review with status CLEAN but `reviewDecision` is empty; the merge pipeline gap
+persists. #973 (status.md refresh) is closed.
+
+**Growth scan (6 dimensions):**
+- **Source flow:** No gap.
+- **Synthesis:** No gap.
+- **Use:** Two concrete gaps found:
+  (1) The search bar and `search_wiki` MCP tool use BM25 only, while the query
+  pipeline uses hybrid BM25+vector with RRF fusion. Same infrastructure
+  (`searchByVector`, `reciprocalRankFusion`) exists but isn't wired into search.
+  Semantic queries miss pages that don't contain exact terms. Filed #988.
+  (2) The agent context endpoint returns all pages with no size cap. As wikis
+  grow, responses can exceed LLM context windows. Filed #989 (add `maxChars`
+  query parameter).
+- **Maintenance:** No new gap beyond existing coverage.
+- **Interface:** One parity gap: the agent ingest REST endpoint doesn't accept
+  `tags`, while both MCP tools do. Filed #987.
+- **Frontier:** Private tier blocked on billing (#958). PR #966 stalled.
+
+**Filed:**
+- **#987** — Agent ingest endpoint does not accept tags (bug, small)
+- **#988** — Add vector search to search bar and search_wiki MCP tool (feature, medium)
+- **#989** — Agent context endpoint: add maxChars to cap response size (feature, small)
+
+**Blocked issue reassessment:** #963 depends on #962 (closed Oct 27), already
+unblocked. #958 is human-action with no dependency to check. No changes needed.
+
+**What's next:** The ready backlog is empty until Office Hour triages the three
+new issues. #988 (hybrid search) is the highest-impact improvement — it closes
+a real recall gap using infrastructure already built. The private tier remains
+blocked on billing (#958) and the PR pipeline gap for #966.
