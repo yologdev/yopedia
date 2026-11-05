@@ -14,29 +14,75 @@ interface RouteParams {
 /** Separator used between concatenated page contents. */
 const PAGE_SEPARATOR = "\n\n---\n\n";
 
+/** Per-page metadata surfaced in the context response. */
+interface PageMeta {
+  confidence?: number;
+  expiry?: string;
+  disputed?: boolean;
+  updated?: string;
+  tags?: string[];
+  owner?: string;
+}
+
+/** A single page entry in the `pages` array of a context section. */
+interface PageEntry {
+  slug: string;
+  title: string;
+  meta: PageMeta;
+}
+
+/** Result from {@link loadPages}: content blob + per-page metadata. */
+interface LoadPagesResult {
+  content: string;
+  count: number;
+  pages: PageEntry[];
+}
+
+/**
+ * Extract the metadata fields from frontmatter that agents need
+ * to make quality-informed decisions about each page.
+ */
+function extractPageMeta(fm: Record<string, unknown>): PageMeta {
+  const meta: PageMeta = {};
+  if (typeof fm.confidence === "number") meta.confidence = fm.confidence;
+  if (typeof fm.expiry === "string") meta.expiry = fm.expiry;
+  if (fm.disputed === true || fm.disputed === "true") meta.disputed = true;
+  if (typeof fm.updated === "string") meta.updated = fm.updated;
+  if (Array.isArray(fm.tags)) meta.tags = fm.tags as string[];
+  if (typeof fm.owner === "string") meta.owner = fm.owner;
+  return meta;
+}
+
 /**
  * Read wiki pages by slug, concatenate their content with a separator.
  * Missing or unparseable pages are skipped with a warning logged.
+ * Returns per-page metadata alongside the concatenated content.
  */
 async function loadPages(
   slugs: string[],
   principal: Principal | null,
-): Promise<{ content: string; count: number }> {
+): Promise<LoadPagesResult> {
   // Read every page in parallel (bounded) — this was a serial per-slug loop and
   // the dominant latency of the endpoint. Order is preserved so the assembled
   // context stays stable; unreadable/missing pages drop out below.
-  const pages = await mapWithConcurrency(slugs, READ_CONCURRENCY, (slug) =>
+  const results = await mapWithConcurrency(slugs, READ_CONCURRENCY, (slug) =>
     // Guarded read: a page with malformed frontmatter drops out of the
     // assembled context (logged) instead of 500-ing the whole endpoint.
     tryReadWikiPageWithFrontmatter(slug, "agents"),
   );
   const contents: string[] = [];
-  pages.forEach((page, i) => {
+  const pages: PageEntry[] = [];
+  results.forEach((page, i) => {
     if (page) {
       // Skip pages the caller can't read (an agent's list may reference a
       // third party's private page).
       if (!canReadFrontmatter(page.frontmatter, principal)) return;
       contents.push(page.body);
+      pages.push({
+        slug: page.slug,
+        title: page.title,
+        meta: extractPageMeta(page.frontmatter),
+      });
     } else {
       logger.warn("agents", `Wiki page "${slugs[i]}" not found — skipping`);
     }
@@ -44,6 +90,7 @@ async function loadPages(
   return {
     content: contents.join(PAGE_SEPARATOR),
     count: contents.length,
+    pages,
   };
 }
 
@@ -59,9 +106,9 @@ async function loadPages(
  * {
  *   agent: AgentProfile,
  *   context: {
- *     identity: string,
- *     learnings: string,
- *     socialWisdom: string,
+ *     identity:    { content: string, pages: PageEntry[] },
+ *     learnings:   { content: string, pages: PageEntry[] },
+ *     socialWisdom: { content: string, pages: PageEntry[] },
  *   },
  *   meta: {
  *     totalChars: number,
@@ -110,9 +157,9 @@ export async function GET(_req: Request, { params }: RouteParams) {
     return NextResponse.json({
       agent,
       context: {
-        identity: identity.content,
-        learnings: learnings.content,
-        socialWisdom: social.content,
+        identity: { content: identity.content, pages: identity.pages },
+        learnings: { content: learnings.content, pages: learnings.pages },
+        socialWisdom: { content: social.content, pages: social.pages },
       },
       meta: {
         totalChars,
