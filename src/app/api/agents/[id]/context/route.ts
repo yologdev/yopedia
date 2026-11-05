@@ -6,6 +6,8 @@ import { canReadFrontmatter } from "@/lib/authz";
 import { mapWithConcurrency, READ_CONCURRENCY } from "@/lib/concurrency";
 import { getErrorMessage } from "@/lib/errors";
 import { logger } from "@/lib/logger";
+import { parseSources } from "@/lib/sources";
+import type { SourceEntry } from "@/lib/types";
 
 interface RouteParams {
   params: Promise<{ id: string }>;
@@ -22,6 +24,13 @@ interface PageMeta {
   updated?: string;
   tags?: string[];
   owner?: string;
+  /* — Provenance fields (added for #985) — */
+  source_url?: string;
+  sources?: SourceEntry[];
+  authors?: string[];
+  contributors?: string[];
+  supersedes?: string;
+  aliases?: string[];
 }
 
 /** A single page entry in the `pages` array of a context section. */
@@ -50,6 +59,27 @@ function extractPageMeta(fm: Record<string, unknown>): PageMeta {
   if (typeof fm.updated === "string") meta.updated = fm.updated;
   if (Array.isArray(fm.tags)) meta.tags = fm.tags as string[];
   if (typeof fm.owner === "string") meta.owner = fm.owner;
+
+  // — Provenance fields (#985) —
+  if (typeof fm.source_url === "string") meta.source_url = fm.source_url;
+
+  // `sources` is stored as a JSON-encoded string in frontmatter; parse it
+  // through the shared helper so agents get structured SourceEntry[] objects.
+  const parsed = parseSources(fm.sources as string | string[] | undefined);
+  if (parsed.length > 0) meta.sources = parsed;
+
+  if (Array.isArray(fm.authors) && fm.authors.length > 0) {
+    meta.authors = fm.authors as string[];
+  }
+  if (Array.isArray(fm.contributors) && fm.contributors.length > 0) {
+    meta.contributors = fm.contributors as string[];
+  }
+  if (typeof fm.supersedes === "string" && fm.supersedes !== "") {
+    meta.supersedes = fm.supersedes;
+  }
+  if (Array.isArray(fm.aliases) && fm.aliases.length > 0) {
+    meta.aliases = fm.aliases as string[];
+  }
   return meta;
 }
 

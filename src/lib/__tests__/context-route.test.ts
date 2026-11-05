@@ -374,4 +374,115 @@ describe("GET /api/agents/[id]/context — per-page metadata", () => {
     expect(meta).not.toHaveProperty("unrecognized_field");
     expect(meta).not.toHaveProperty("visibility");
   });
+
+  // --- Provenance fields (#985) ---
+
+  it("surfaces provenance fields when present in frontmatter", async () => {
+    const sourcesJson = JSON.stringify([
+      { type: "url", url: "https://example.com/article", fetched: "2026-01-15T00:00:00Z", triggered_by: "alice" },
+    ]);
+    mockedResolve.mockResolvedValue({
+      identityPages: ["prov-page"],
+      learningPages: [],
+      socialPages: [],
+    } as never);
+    wirePages({
+      "prov-page": rich(
+        "provenance body",
+        {
+          source_url: "https://example.com/article",
+          sources: sourcesJson,
+          authors: ["alice", "bob"],
+          contributors: ["charlie"],
+          supersedes: "old-page",
+          aliases: ["alt-name", "other-name"],
+          confidence: 0.8,
+        },
+        "Provenance Page",
+      ),
+    });
+
+    const json = await (await call()).json();
+    const meta = json.context.identity.pages[0].meta;
+    expect(meta.source_url).toBe("https://example.com/article");
+    expect(meta.sources).toEqual([
+      { type: "url", url: "https://example.com/article", fetched: "2026-01-15T00:00:00Z", triggered_by: "alice" },
+    ]);
+    expect(meta.authors).toEqual(["alice", "bob"]);
+    expect(meta.contributors).toEqual(["charlie"]);
+    expect(meta.supersedes).toBe("old-page");
+    expect(meta.aliases).toEqual(["alt-name", "other-name"]);
+    // Existing fields still present
+    expect(meta.confidence).toBe(0.8);
+  });
+
+  it("omits provenance fields when absent from frontmatter", async () => {
+    mockedResolve.mockResolvedValue({
+      identityPages: ["no-prov"],
+      learningPages: [],
+      socialPages: [],
+    } as never);
+    wirePages({
+      "no-prov": rich("body", { confidence: 0.5 }, "No Provenance"),
+    });
+
+    const json = await (await call()).json();
+    const meta = json.context.identity.pages[0].meta;
+    expect(meta).not.toHaveProperty("source_url");
+    expect(meta).not.toHaveProperty("sources");
+    expect(meta).not.toHaveProperty("authors");
+    expect(meta).not.toHaveProperty("contributors");
+    expect(meta).not.toHaveProperty("supersedes");
+    expect(meta).not.toHaveProperty("aliases");
+  });
+
+  it("omits provenance fields when they are empty", async () => {
+    mockedResolve.mockResolvedValue({
+      identityPages: ["empty-prov"],
+      learningPages: [],
+      socialPages: [],
+    } as never);
+    wirePages({
+      "empty-prov": rich(
+        "body",
+        {
+          sources: "[]",
+          authors: [],
+          contributors: [],
+          supersedes: "",
+          aliases: [],
+        },
+        "Empty Provenance",
+      ),
+    });
+
+    const json = await (await call()).json();
+    const meta = json.context.identity.pages[0].meta;
+    expect(meta).not.toHaveProperty("sources");
+    expect(meta).not.toHaveProperty("authors");
+    expect(meta).not.toHaveProperty("contributors");
+    expect(meta).not.toHaveProperty("supersedes");
+    expect(meta).not.toHaveProperty("aliases");
+  });
+
+  it("parses sources from a JSON string in frontmatter", async () => {
+    const sourcesJson = JSON.stringify([
+      { type: "url", url: "https://a.com", fetched: "2026-01-01T00:00:00Z", triggered_by: "system" },
+      { type: "text", url: "text-paste", fetched: "2026-02-01T00:00:00Z", triggered_by: "bob" },
+    ]);
+    mockedResolve.mockResolvedValue({
+      identityPages: ["multi-src"],
+      learningPages: [],
+      socialPages: [],
+    } as never);
+    wirePages({
+      "multi-src": rich("body", { sources: sourcesJson }, "Multi Source"),
+    });
+
+    const json = await (await call()).json();
+    const meta = json.context.identity.pages[0].meta;
+    expect(meta.sources).toHaveLength(2);
+    expect(meta.sources[0].type).toBe("url");
+    expect(meta.sources[1].type).toBe("text");
+  });
 });
