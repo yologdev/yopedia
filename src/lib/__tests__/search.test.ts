@@ -527,6 +527,78 @@ describe("searchWikiContent", () => {
     expect(results).toHaveLength(1);
     expect(results[0].summary).toContain("This is the summary line.");
   });
+
+  it("fuses BM25 and vector results via RRF when embeddings return hits", async () => {
+    await ensureDirectories();
+    // page-a matches the BM25 term "agents"
+    await writeWikiPage("page-a", "# Page A\n\nAgents learn from experience.");
+    // page-b has NO BM25 match for "agents" — only vector search finds it
+    await writeWikiPage("page-b", "# Page B\n\nKnowledge acquisition in AI systems.");
+    await updateIndex([
+      { title: "Page A", slug: "page-a", summary: "s" },
+      { title: "Page B", slug: "page-b", summary: "s" },
+    ]);
+
+    // Mock vector search to return page-b as the top semantic hit
+    mockedSearchByVector.mockResolvedValueOnce([
+      { slug: "page-b", score: 0.95 },
+      { slug: "page-a", score: 0.60 },
+    ]);
+
+    const results = await searchWikiContent("agents", 10);
+    // Both pages should appear — page-b via vector, page-a via BM25+vector
+    const slugs = results.map((r) => r.slug);
+    expect(slugs).toContain("page-a");
+    expect(slugs).toContain("page-b");
+  });
+
+  it("returns BM25-only results when vector search returns empty", async () => {
+    await ensureDirectories();
+    await writeWikiPage("bm25-only", "# BM25 Only\n\nThis page has the keyword foobarbaz.");
+    await updateIndex([{ title: "BM25 Only", slug: "bm25-only", summary: "s" }]);
+
+    // Vector search returns nothing (no embedding provider configured)
+    mockedSearchByVector.mockResolvedValueOnce([]);
+
+    const results = await searchWikiContent("foobarbaz", 10);
+    expect(results).toHaveLength(1);
+    expect(results[0].slug).toBe("bm25-only");
+  });
+
+  it("falls back to BM25-only when vector search throws", async () => {
+    await ensureDirectories();
+    await writeWikiPage("fallback", "# Fallback\n\nSome content with testword.");
+    await updateIndex([{ title: "Fallback", slug: "fallback", summary: "s" }]);
+
+    // Vector search errors out
+    mockedSearchByVector.mockRejectedValueOnce(new Error("embedding provider unavailable"));
+
+    const results = await searchWikiContent("testword", 10);
+    expect(results).toHaveLength(1);
+    expect(results[0].slug).toBe("fallback");
+  });
+
+  it("intersects vector results with scope-filtered candidates", async () => {
+    await ensureDirectories();
+    await writeWikiPage("in-scope", "# In Scope\n\nRelevant content about cats.");
+    await writeWikiPage("out-scope", "# Out Scope\n\nAlso about cats.");
+    await updateIndex([
+      { title: "In Scope", slug: "in-scope", summary: "s" },
+      { title: "Out Scope", slug: "out-scope", summary: "s" },
+    ]);
+
+    // Vector returns both, but scope only allows in-scope
+    mockedSearchByVector.mockResolvedValueOnce([
+      { slug: "out-scope", score: 0.99 },
+      { slug: "in-scope", score: 0.80 },
+    ]);
+
+    const scope = { agentId: "test", slugs: ["in-scope"] };
+    const results = await searchWikiContent("cats", 10, scope);
+    const slugs = results.map((r) => r.slug);
+    expect(slugs).toContain("in-scope");
+    expect(slugs).not.toContain("out-scope");
+  });
 });
 
 // ---------------------------------------------------------------------------

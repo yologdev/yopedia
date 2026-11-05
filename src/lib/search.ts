@@ -25,6 +25,7 @@ import { getOwnerIndex } from "./owner-index";
 import { getBacklinkIndex } from "./backlink-index";
 import { relatedByVector, searchByVector } from "./embeddings";
 import { RELATED_PAGES_LIMIT, RELATED_MIN_SCORE, RELATED_CANDIDATE_POOL } from "./constants";
+import { reciprocalRankFusion } from "./query-search";
 import { tokenize, bm25Score } from "./bm25";
 import type { CorpusStats } from "./bm25";
 
@@ -642,6 +643,54 @@ export async function searchWikiContent(
 
   // Sort by BM25 score descending, then alphabetically by title
   scored.sort((a, b) => b.score - a.score || a.title.localeCompare(b.title));
+
+  // --- Vector search + RRF fusion (fail-soft, same pattern as query-search.ts) -
+  // The vector store is global and knows nothing about scopes / visibility, so
+  // intersect its results with the candidate set we already scope-filtered above.
+  const candidateSlugs = new Set(candidates.map((c) => c.slug));
+  let vectorResults: Array<{ slug: string; score: number }> = [];
+  try {
+    const raw = await searchByVector(query, maxResults * 2);
+    vectorResults = raw.filter((r) => candidateSlugs.has(r.slug));
+  } catch {
+    // Vector search failure is non-fatal — fall back to BM25 only
+  }
+
+  if (vectorResults.length > 0) {
+    const bm25ForFusion = scored.map((s) => ({ slug: s.slug, score: s.score }));
+    const fused = reciprocalRankFusion(bm25ForFusion, vectorResults);
+
+    // Build the final list from the fused ranking. Vector-only hits (no BM25
+    // match) won't have metadata (title/summary/snippet) in `scored`, so pull
+    // them from the candidate data we already read.
+    const scoredMap = new Map(scored.map((s) => [s.slug, s]));
+    const merged: typeof scored = [];
+    for (const { slug, score } of fused) {
+      const existing = scoredMap.get(slug);
+      if (existing) {
+        merged.push({ ...existing, score });
+      } else {
+        // Vector-only hit — build metadata from the already-read page body
+        const idx = candidates.findIndex((c) => c.slug === slug);
+        const page = idx >= 0 ? candidatePages[idx] : null;
+        if (!page) continue;
+        const parsed = tryParseFrontmatter(page.content, slug, "search");
+        if (!parsed) continue;
+        if (!canReadFrontmatter(parsed.data, principal)) continue;
+        const body = parsed.body;
+        const titleMatch = page.content.match(/^#\s+(.+)$/m);
+        const title = titleMatch ? titleMatch[1].trim() : slug;
+        const summaryLine = body
+          .replace(/^#\s+.+$/m, "")
+          .trim()
+          .split("\n")
+          .find((l) => l.trim().length > 0);
+        const summary = summaryLine ? truncateAtWord(summaryLine, 120) : "";
+        merged.push({ slug, title, summary, snippet: summary, score });
+      }
+    }
+    return merged.slice(0, maxResults);
+  }
 
   return scored.slice(0, maxResults);
 }
