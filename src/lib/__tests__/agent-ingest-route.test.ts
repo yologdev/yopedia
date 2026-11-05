@@ -416,4 +416,63 @@ describe("POST /api/agents/[id]/ingest", () => {
       expect(mockedAddToVault).toHaveBeenCalledWith("alice--default", "ingested-page");
     });
   });
+
+  describe("tags", () => {
+    it("forwards tags to ingestUrl opts", async () => {
+      const res = await POST(
+        req({ url: "https://example.com", tags: ["ai", "research"] }, "alice--yoyo.s"),
+        { params },
+      );
+      expect(res.status).toBe(200);
+      expect(mockedIngestUrl).toHaveBeenCalledWith(
+        "https://example.com",
+        expect.objectContaining({ tags: ["ai", "research"] }),
+      );
+    });
+
+    it("forwards tags to ingest (text path) opts", async () => {
+      const res = await POST(
+        req({ text: "Some knowledge", title: "Note", tags: ["notes"] }, "alice--yoyo.s"),
+        { params },
+      );
+      expect(res.status).toBe(200);
+      expect(mockedIngest).toHaveBeenCalledWith(
+        "Note",
+        "Some knowledge",
+        expect.objectContaining({ tags: ["notes"] }),
+      );
+    });
+
+    it("omitting tags still works (backward compatible)", async () => {
+      const res = await POST(
+        req({ url: "https://example.com" }, "alice--yoyo.s"),
+        { params },
+      );
+      expect(res.status).toBe(200);
+      expect(mockedIngestUrl).toHaveBeenCalledWith(
+        "https://example.com",
+        expect.not.objectContaining({ tags: expect.anything() }),
+      );
+    });
+
+    it("rejects non-array tags", async () => {
+      const res = await POST(
+        req({ url: "https://example.com", tags: "not-an-array" }, "alice--yoyo.s"),
+        { params },
+      );
+      expect(res.status).toBe(400);
+      const json = await res.json();
+      expect(json.error).toMatch(/tags must be an array of strings/);
+    });
+
+    it("rejects tags with non-string elements", async () => {
+      const res = await POST(
+        req({ url: "https://example.com", tags: ["valid", 123] }, "alice--yoyo.s"),
+        { params },
+      );
+      expect(res.status).toBe(400);
+      const json = await res.json();
+      expect(json.error).toMatch(/tags must be an array of strings/);
+    });
+  });
 });
