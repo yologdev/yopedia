@@ -1,6 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
 import { hasLLMKey, callLLMStream } from "@/lib/llm";
-import { QUERY_MAX_OUTPUT_TOKENS } from "@/lib/constants";
+import {
+  QUERY_MAX_OUTPUT_TOKENS,
+  STREAM_DONE_SENTINEL,
+  STREAM_ERROR_SENTINEL,
+} from "@/lib/constants";
 import { listReadableWikiPages, isAgentScopedType, isArtifactType } from "@/lib/wiki";
 import { getPrincipal } from "@/lib/auth";
 import {
@@ -129,13 +133,37 @@ export async function POST(request: NextRequest) {
       queryFormat,
     );
 
-    // Stream the LLM response
-    const result = callLLMStream(systemPrompt, trimmedQuestion, {
+    // Stream the LLM response, wrapping it in a custom ReadableStream that
+    // appends a trailing sentinel so the client can detect truncation.
+    const llmResult = callLLMStream(systemPrompt, trimmedQuestion, {
       maxOutputTokens: QUERY_MAX_OUTPUT_TOKENS,
     });
 
-    return result.toTextStreamResponse({
+    const encoder = new TextEncoder();
+
+    const sentinelStream = new ReadableStream<Uint8Array>({
+      async start(controller) {
+        try {
+          for await (const chunk of llmResult.textStream) {
+            controller.enqueue(encoder.encode(chunk));
+          }
+          // LLM stream completed successfully — write the done sentinel.
+          controller.enqueue(encoder.encode(STREAM_DONE_SENTINEL));
+        } catch (err) {
+          // Mid-stream LLM failure — write the error sentinel so the client
+          // can distinguish a truncated answer from a complete one.
+          logger.error("query", "LLM stream error mid-response", err);
+          controller.enqueue(encoder.encode(STREAM_ERROR_SENTINEL));
+        } finally {
+          controller.close();
+        }
+      },
+    });
+
+    return new Response(sentinelStream, {
+      status: 200,
       headers: {
+        "Content-Type": "text/plain; charset=utf-8",
         // Percent-encode so non-ASCII slugs (e.g. CJK titles) survive the
         // header transport, which is Latin-1 on the wire. The client decodes
         // with decodeURIComponent before JSON.parse.
