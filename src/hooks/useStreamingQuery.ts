@@ -2,6 +2,10 @@
 
 import { useState, useCallback, useRef, useEffect } from "react";
 import { extractCitedSlugs } from "@/lib/citations";
+import {
+  STREAM_DONE_SENTINEL,
+  STREAM_ERROR_SENTINEL,
+} from "@/lib/constants";
 import type { QueryFormat } from "@/lib/query-format";
 
 export interface QueryResponse {
@@ -189,6 +193,30 @@ export function useStreamingQuery(
           const chunk = decoder.decode(value, { stream: true });
           answer += chunk;
           setResult({ answer, sources });
+        }
+
+        // Check for stream sentinels and strip them from the displayed answer.
+        const hasErrorSentinel = answer.includes(STREAM_ERROR_SENTINEL);
+        const hasDoneSentinel = answer.includes(STREAM_DONE_SENTINEL);
+        const streamTruncated = !hasDoneSentinel && !hasErrorSentinel;
+
+        // Strip sentinel markers from the answer text
+        if (hasDoneSentinel) {
+          answer = answer.replace(STREAM_DONE_SENTINEL, "");
+        }
+        if (hasErrorSentinel) {
+          answer = answer.replace(STREAM_ERROR_SENTINEL, "");
+        }
+
+        // Show a warning if the stream was incomplete
+        if (hasErrorSentinel || streamTruncated) {
+          const warning = "Answer may be incomplete (connection interrupted)";
+          setResult({ answer, sources, error: warning });
+          setError(warning);
+          setStreaming(false);
+          // Still call onComplete so the partial answer is saved if the caller wants it
+          onCompleteRef.current?.(trimmed, answer, sources, format);
+          return;
         }
 
         // Refine sources to only those actually cited in the answer

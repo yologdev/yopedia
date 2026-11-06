@@ -182,6 +182,25 @@ export const RELATED_MIN_SCORE = 0.45;
 /** Default canvas height (px) for the wiki graph visualisation. */
 export const GRAPH_CANVAS_HEIGHT = 560;
 
+// ---- Streaming sentinels --------------------------------------------------
+
+/**
+ * Trailing sentinel appended to a streaming query response when the LLM stream
+ * completes successfully. The client checks for this marker when `reader.read()`
+ * returns `done: true` — its absence means the stream was truncated.
+ *
+ * The marker is a newline-wrapped tag unlikely to appear in natural LLM output,
+ * keeping it invisible in rendered markdown while remaining easy to detect.
+ */
+export const STREAM_DONE_SENTINEL = "\n<!-- STREAM_COMPLETE -->\n";
+
+/**
+ * Sentinel appended when the LLM stream errors mid-response. The server catches
+ * the error and writes this marker before closing, so the client can distinguish
+ * "provider dropped the connection" from "completed normally".
+ */
+export const STREAM_ERROR_SENTINEL = "\n<!-- STREAM_ERROR -->\n";
+
 // ---- Embeddings -----------------------------------------------------------
 
 /**
