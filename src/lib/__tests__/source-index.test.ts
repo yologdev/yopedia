@@ -295,6 +295,111 @@ describe("normalizeUrl", () => {
       "https://example.com/?q=test",
     );
   });
+
+  // ---- Tracking param stripping -------------------------------------------
+
+  it("strips utm_source", () => {
+    expect(normalizeUrl("https://example.com/post?utm_source=twitter")).toBe(
+      "https://example.com/post",
+    );
+  });
+
+  it("strips utm_medium", () => {
+    expect(normalizeUrl("https://example.com/post?utm_medium=social")).toBe(
+      "https://example.com/post",
+    );
+  });
+
+  it("strips utm_campaign", () => {
+    expect(normalizeUrl("https://example.com/post?utm_campaign=launch")).toBe(
+      "https://example.com/post",
+    );
+  });
+
+  it("strips utm_term", () => {
+    expect(normalizeUrl("https://example.com/post?utm_term=keyword")).toBe(
+      "https://example.com/post",
+    );
+  });
+
+  it("strips utm_content", () => {
+    expect(normalizeUrl("https://example.com/post?utm_content=banner")).toBe(
+      "https://example.com/post",
+    );
+  });
+
+  it("strips fbclid", () => {
+    expect(normalizeUrl("https://example.com/post?fbclid=abc123")).toBe(
+      "https://example.com/post",
+    );
+  });
+
+  it("strips gclid", () => {
+    expect(normalizeUrl("https://example.com/post?gclid=xyz789")).toBe(
+      "https://example.com/post",
+    );
+  });
+
+  it("strips ref", () => {
+    expect(normalizeUrl("https://example.com/post?ref=homepage")).toBe(
+      "https://example.com/post",
+    );
+  });
+
+  it("strips mc_cid", () => {
+    expect(normalizeUrl("https://example.com/post?mc_cid=abc")).toBe(
+      "https://example.com/post",
+    );
+  });
+
+  it("strips mc_eid", () => {
+    expect(normalizeUrl("https://example.com/post?mc_eid=def")).toBe(
+      "https://example.com/post",
+    );
+  });
+
+  it("strips multiple tracking params at once", () => {
+    expect(
+      normalizeUrl(
+        "https://example.com/post?utm_source=twitter&utm_medium=social&fbclid=abc",
+      ),
+    ).toBe("https://example.com/post");
+  });
+
+  it("strips tracking params but preserves meaningful ones", () => {
+    expect(
+      normalizeUrl(
+        "https://example.com/search?q=test&utm_source=twitter&page=2",
+      ),
+    ).toBe("https://example.com/search?page=2&q=test");
+  });
+
+  it("preserves meaningful params: page, id, q", () => {
+    expect(normalizeUrl("https://example.com/list?page=2")).toBe(
+      "https://example.com/list?page=2",
+    );
+    expect(normalizeUrl("https://example.com/item?id=123")).toBe(
+      "https://example.com/item?id=123",
+    );
+    expect(normalizeUrl("https://example.com/search?q=search")).toBe(
+      "https://example.com/search?q=search",
+    );
+  });
+
+  it("strips tracking params case-insensitively", () => {
+    expect(normalizeUrl("https://example.com/post?UTM_SOURCE=twitter")).toBe(
+      "https://example.com/post",
+    );
+    expect(normalizeUrl("https://example.com/post?Fbclid=abc")).toBe(
+      "https://example.com/post",
+    );
+  });
+
+  it("URL with only tracking params normalizes same as bare URL", () => {
+    expect(
+      normalizeUrl("https://example.com/post?utm_source=twitter&utm_medium=social"),
+    ).toBe(normalizeUrl("https://example.com/post"));
+  });
 });
 
 // ---------------------------------------------------------------------------

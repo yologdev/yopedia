@@ -32,6 +32,20 @@ export function resetSourceIndex(): void {
   cachedIndex = null;
 }
 
+/** Tracking query params to strip for dedup — a small, well-known set. */
+const TRACKING_PARAMS = new Set([
+  "utm_source",
+  "utm_medium",
+  "utm_campaign",
+  "utm_term",
+  "utm_content",
+  "fbclid",
+  "gclid",
+  "ref",
+  "mc_cid",
+  "mc_eid",
+]);
+
 /**
  * Normalize a URL for stable dedup matching.
  *
@@ -42,9 +56,10 @@ export function resetSourceIndex(): void {
  *  4. Lowercase hostname (paths stay case-sensitive per RFC)
  *  5. Strip default ports (80 for http, 443 for https)
  *  6. Strip leading `www.` from hostname
- *  7. Sort query parameters
- *  8. Drop trailing slash from pathname
- *  9. Upgrade http → https so both variants match
+ *  7. Strip known tracking query params (utm_*, fbclid, gclid, etc.)
+ *  8. Sort remaining query parameters
+ *  9. Drop trailing slash from pathname
+ * 10. Upgrade http → https so both variants match
  */
 export function normalizeUrl(url: string): string {
   const trimmed = url.trim();
@@ -86,8 +101,15 @@ export function normalizeUrl(url: string): string {
     parsed.hostname = parsed.hostname.slice(4);
   }
 
-  // Sort query parameters for stable ordering
+  // Strip known tracking query params before sorting
   const params = new URLSearchParams(parsed.search);
+  for (const key of [...params.keys()]) {
+    if (TRACKING_PARAMS.has(key.toLowerCase())) {
+      params.delete(key);
+    }
+  }
+
+  // Sort remaining query parameters for stable ordering
   const sortedParams = new URLSearchParams(
     [...params.entries()].sort(([a], [b]) => a.localeCompare(b)),
   );
