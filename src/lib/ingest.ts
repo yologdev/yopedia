@@ -1389,11 +1389,19 @@ async function attachIngestTrigger(
  * batches → merge), or a deterministic fallback page when there's no LLM key.
  * Returns the raw synthesized body (still carrying the leading CONCEPT marker on
  * the LLM path); the caller strips that marker.
+ *
+ * When MAP/REDUCE is used, also returns `chunksFailed`/`chunksTotal` so the
+ * caller can surface partial coverage loss in the result and frontmatter.
  */
-async function synthesizeBody(title: string, content: string): Promise<string> {
+interface SynthesisResult {
+  body: string;
+  chunksFailed: number;
+  chunksTotal: number;
+}
+async function synthesizeBody(title: string, content: string): Promise<SynthesisResult> {
   if (!hasLLMKey()) {
     // Derived title so a title-less paste doesn't emit an empty `# ` H1.
-    return generateFallbackPage(title, content);
+    return { body: await generateFallbackPage(title, content), chunksFailed: 0, chunksTotal: 0 };
   }
   const systemPrompt = await buildIngestSystemPrompt();
   const chunks = chunkText(content, MAX_LLM_INPUT_CHARS);
@@ -1402,7 +1410,7 @@ async function synthesizeBody(title: string, content: string): Promise<string> {
   const llmOptions = { maxOutputTokens: INGEST_MAX_OUTPUT_TOKENS };
 
   if (chunks.length === 1) {
-    return callLLM(systemPrompt, chunks[0], llmOptions);
+    return { body: await callLLM(systemPrompt, chunks[0], llmOptions), chunksFailed: 0, chunksTotal: 1 };
   }
 
   // Long content — MAP/REDUCE. Distil each chunk straight from the SOURCE (in
@@ -1445,7 +1453,9 @@ async function synthesizeBody(title: string, content: string): Promise<string> {
     // reducing nothing into a hallucinated page.
     throw new Error("synthesis produced no content from the source");
   }
-  return callLLM(REDUCE_SYSTEM_PROMPT, notes, llmOptions);
+  const failed = partials.filter((p) => !p.trim()).length;
+  const body = await callLLM(REDUCE_SYSTEM_PROMPT, notes, llmOptions);
+  return { body, chunksFailed: failed, chunksTotal: chunks.length };
 }
 
 /**
@@ -1517,6 +1527,8 @@ export async function ingest(
 
   // 1. Generate wiki page content (or use a prebuilt body — image path)
   let wikiContent: string;
+  let chunksFailed = 0;
+  let chunksTotal = 0;
   if (prebuiltContent) {
     // Image ingest: skip the LLM, write the already-final body as-is.
     wikiContent = prebuiltContent;
@@ -1525,7 +1537,10 @@ export async function ingest(
     // text and the body is clean prose (no inline images, no `## Figures`
     // gallery, no re-hosting).
     const cleanContent = stripImageMarkdown(content);
-    wikiContent = await synthesizeBody(effectiveTitle, cleanContent);
+    const synthesis = await synthesizeBody(effectiveTitle, cleanContent);
+    wikiContent = synthesis.body;
+    chunksFailed = synthesis.chunksFailed;
+    chunksTotal = synthesis.chunksTotal;
   }
 
   // Pull the leading `CONCEPT:` / `ALIASES:` header lines the synthesis prompt
@@ -1656,6 +1671,12 @@ export async function ingest(
   // Persist the original source URL when provided (URL-based ingest).
   if (options?.sourceUrl) {
     frontmatter.source_url = options.sourceUrl;
+  }
+
+  // Surface partial MAP/REDUCE chunk failures so the page carries a visible
+  // signal that some source material was lost during synthesis.
+  if (chunksFailed > 0) {
+    frontmatter.synthesis_gaps = `${chunksFailed} of ${chunksTotal} chunks failed`;
   }
 
   // Build the structured sources[] provenance entry for this ingest, and keep a
@@ -1906,6 +1927,7 @@ export async function ingest(
     wikiPages: [slug, ...updatedSlugs],
     indexUpdated: true,
     ...(options?.sourceUrl ? { sourceUrl: options.sourceUrl } : {}),
+    ...(chunksFailed > 0 ? { chunksFailed, chunksTotal } : {}),
   };
 
   // 7. Persist a ledger entry recording this ingest operation.
