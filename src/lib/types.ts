@@ -55,6 +55,13 @@ export interface IngestResult {
    * rather than "created".
    */
   deduped?: boolean;
+  /**
+   * When the source was long enough for MAP/REDUCE synthesis, how many MAP
+   * chunks failed (LLM error) vs the total. Present only when at least one
+   * chunk failed but the page was still produced from the surviving chunks.
+   */
+  chunksFailed?: number;
+  chunksTotal?: number;
 }
 
 /** Result from a query against the wiki. */

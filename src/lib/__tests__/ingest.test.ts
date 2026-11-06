@@ -2816,6 +2816,11 @@ describe("ingest — chunked LLM calls", () => {
     expect(page!.content).toContain("Merged.");
     expect(page!.content.match(/## Key Points/g) ?? []).toHaveLength(1);
 
+    // Full success: no gap signal in the result or frontmatter.
+    expect(result.chunksFailed).toBeUndefined();
+    expect(result.chunksTotal).toBeUndefined();
+    expect(page!.frontmatter.synthesis_gaps).toBeUndefined();
+
     mockedHasLLMKey.mockReturnValue(false);
     mockedCallLLM.mockReset();
   });
@@ -2852,6 +2857,15 @@ describe("ingest — chunked LLM calls", () => {
     // The page was created despite one chunk failing
     const page = await readWikiPageWithFrontmatter(result.primarySlug);
     expect(page!.content).toContain("Merged.");
+
+    // The ingest result carries the chunk failure count
+    expect(result.chunksFailed).toBe(1);
+    expect(result.chunksTotal).toBeGreaterThan(1);
+
+    // The page frontmatter carries a visible synthesis_gaps signal
+    expect(page!.frontmatter.synthesis_gaps).toBe(
+      `1 of ${result.chunksTotal} chunks failed`,
+    );
 
     mockedHasLLMKey.mockReturnValue(false);
     mockedCallLLM.mockReset();
