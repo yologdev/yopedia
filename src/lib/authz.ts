@@ -228,10 +228,10 @@ export function canWriteFrontmatter(
 /**
  * True when the principal is entitled to create private (paid) content.
  *
- * Reads Clerk `publicMetadata.plan === "pro"`. No Clerk Billing checkout is
- * wired in this codebase yet; provisioning the plan (dashboard or a billing
- * webhook that sets `publicMetadata.plan`) is owner-side config. Fail-closed:
- * service/token principals and any Clerk error yield `false`.
+ * Reads Clerk `publicMetadata.plan === "pro"`. The plan is provisioned by
+ * Clerk Billing once configured — see BILLING.md for setup (not yet
+ * configured). Fail-closed: service/token principals and any Clerk error
+ * yield `false`.
  */
 export async function hasPaidPlan(principal: Principal): Promise<boolean> {
   if (principal.id.startsWith("service:")) return false;
