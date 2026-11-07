@@ -79,7 +79,7 @@ import { extractSummary, ingest, ingestUrl, ingestImage, ingestPdf, ingestXMenti
 import { query, saveAnswerToWiki, type QueryFormat } from "./lib/query";
 import { listQueries, type QueryHistoryEntry } from "./lib/query-history";
 import { isUrl } from "./lib/fetch";
-import { MAX_BATCH_URLS } from "./lib/constants";
+import { MAX_BATCH_URLS, MAX_CONTENT_LENGTH } from "./lib/constants";
 import { getErrorMessage } from "./lib/errors";
 import { patchMetadata, type PatchMetadataResult } from "./lib/patch-metadata";
 import { getAgent, listAgents, updateAgent, deleteAgent, seedAgent, resolveAgentPages } from "./lib/agents";
@@ -572,6 +572,12 @@ export async function handleIngestText(args: {
 }> {
   if (!args.content || args.content.trim().length === 0) {
     throw new Error("content is required and must be non-empty");
+  }
+
+  if (args.content.length > MAX_CONTENT_LENGTH) {
+    throw new Error(
+      `Text content too large: ${args.content.length.toLocaleString()} chars exceeds the ${MAX_CONTENT_LENGTH.toLocaleString()} char limit. Please shorten the input.`,
+    );
   }
 
   const title = args.title ?? (extractSummary(args.content).slice(0, 80) || "Untitled");
