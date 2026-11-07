@@ -4,6 +4,7 @@ import { isUrl } from "@/lib/fetch";
 import { getPrincipal, getServicePrincipal } from "@/lib/auth";
 import { enqueueTask } from "@/lib/tasks";
 import { MAX_BATCH_URLS } from "@/lib/constants";
+import { enforceRateLimit } from "@/lib/rate-limit";
 import { getErrorMessage } from "@/lib/errors";
 import { logger } from "@/lib/logger";
 import { addToVault, vaultOwnedBy } from "@/lib/vault";
@@ -23,6 +24,17 @@ export async function POST(request: NextRequest) {
     if (!principal) {
       return NextResponse.json({ error: "Sign in required." }, { status: 401 });
     }
+
+    // Cost guard — batch ingest triggers LLM synthesis per URL (highest cost
+    // multiplier of all ingest endpoints).
+    const rl = await enforceRateLimit("ingest", principal.id);
+    if (!rl.allowed) {
+      return NextResponse.json(
+        { error: "Rate limit exceeded. Please wait before ingesting again." },
+        { status: 429 },
+      );
+    }
+
     const body = await request.json();
     const { urls, tags } = body;
 

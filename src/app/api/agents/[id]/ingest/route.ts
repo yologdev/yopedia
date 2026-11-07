@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { verifyAgentToken, addAgentLearningPage, getAgent } from "@/lib/agents";
 import { getServicePrincipal } from "@/lib/auth";
+import { enforceRateLimit } from "@/lib/rate-limit";
 import {
   ingestUrl,
   ingest,
@@ -117,6 +118,32 @@ export async function POST(req: Request, { params }: RouteParams) {
       return NextResponse.json({ error: "Invalid token." }, { status: 401 });
     }
 
+    // Cost guard — agent ingest triggers LLM synthesis + embedding. Key on the
+    // agent's human owner so a single owner can't bypass the limit by registering
+    // many agents. The agent record may not be resolved yet (per-agent-token path),
+    // so resolve it now (cheap local read) when needed.
+    {
+      if (!agentRecord) {
+        try {
+          agentRecord = await getAgent(id);
+        } catch (err) {
+          if (err instanceof Error && err.message.includes("Invalid agent ID")) {
+            agentRecord = null;
+          } else {
+            throw err;
+          }
+        }
+      }
+      const rlKey = agentRecord?.owner ?? id;
+      const rl = await enforceRateLimit("ingest", rlKey);
+      if (!rl.allowed) {
+        return NextResponse.json(
+          { error: "Rate limit exceeded. Please wait before ingesting again." },
+          { status: 429 },
+        );
+      }
+    }
+
     let body: {
       url?: unknown;
       text?: unknown;
@@ -148,14 +175,16 @@ export async function POST(req: Request, { params }: RouteParams) {
     // path the agent record is already resolved; on the per-agent-token path we
     // resolve it now so the owner is available for attribution.
     const asOwner = body.asOwner === true;
-    if (asOwner && !agentRecord) {
-      try {
-        agentRecord = await getAgent(id);
-      } catch (err) {
-        if (err instanceof Error && err.message.includes("Invalid agent ID")) {
-          agentRecord = null;
-        } else {
-          throw err;
+    if (asOwner) {
+      if (!agentRecord) {
+        try {
+          agentRecord = await getAgent(id);
+        } catch (err) {
+          if (err instanceof Error && err.message.includes("Invalid agent ID")) {
+            agentRecord = null;
+          } else {
+            throw err;
+          }
         }
       }
       if (!agentRecord?.owner) {
