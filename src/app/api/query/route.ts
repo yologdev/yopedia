@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { query, type QueryFormat } from "@/lib/query";
 import { getPrincipal } from "@/lib/auth";
+import { enforceRateLimit } from "@/lib/rate-limit";
 import { getErrorMessage } from "@/lib/errors";
 import { logger } from "@/lib/logger";
 
@@ -60,6 +61,15 @@ export async function POST(request: NextRequest) {
       return NextResponse.json(
         { error: "Sign in required to query yopedia." },
         { status: 401 },
+      );
+    }
+
+    // Cost guard — each query triggers an LLM generation.
+    const rl = await enforceRateLimit("query", principal.id);
+    if (!rl.allowed) {
+      return NextResponse.json(
+        { error: "Rate limit exceeded. Please wait before querying again." },
+        { status: 429 },
       );
     }
 
