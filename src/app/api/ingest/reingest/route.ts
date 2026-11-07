@@ -3,6 +3,7 @@ import { reingest } from "@/lib/ingest";
 import { readWikiPageWithFrontmatter } from "@/lib/wiki";
 import { getPrincipal, getServicePrincipal } from "@/lib/auth";
 import { canReadFrontmatter, canWriteFrontmatter } from "@/lib/authz";
+import { enforceRateLimit } from "@/lib/rate-limit";
 import { getErrorMessage } from "@/lib/errors";
 import { logger } from "@/lib/logger";
 
@@ -12,6 +13,16 @@ export async function POST(request: NextRequest) {
     if (!principal) {
       return NextResponse.json({ error: "Sign in required." }, { status: 401 });
     }
+
+    // Cost guard — reingest re-synthesizes the page via LLM.
+    const rl = await enforceRateLimit("ingest", principal.id);
+    if (!rl.allowed) {
+      return NextResponse.json(
+        { error: "Rate limit exceeded. Please wait before ingesting again." },
+        { status: 429 },
+      );
+    }
+
     const body = await request.json();
     const { slug } = body;
 

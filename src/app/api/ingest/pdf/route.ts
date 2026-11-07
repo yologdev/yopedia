@@ -6,6 +6,7 @@ import { createIngestJob } from "@/lib/ingest-jobs";
 import { enqueueOrInline } from "@/lib/ingest-async";
 import { stageBytes } from "@/lib/ingest-staging";
 import { getPrincipal, getServicePrincipal } from "@/lib/auth";
+import { enforceRateLimit } from "@/lib/rate-limit";
 import { ClientInputError, getErrorMessage } from "@/lib/errors";
 import { logger } from "@/lib/logger";
 import { MAX_PDF_SIZE } from "@/lib/constants";
@@ -27,6 +28,15 @@ export async function POST(request: NextRequest) {
     const principal = (await getPrincipal()) ?? getServicePrincipal(request);
     if (!principal) {
       return NextResponse.json({ error: "Sign in required." }, { status: 401 });
+    }
+
+    // Cost guard — PDF ingest triggers LLM synthesis + embedding.
+    const rl = await enforceRateLimit("ingest", principal.id);
+    if (!rl.allowed) {
+      return NextResponse.json(
+        { error: "Rate limit exceeded. Please wait before ingesting again." },
+        { status: 429 },
+      );
     }
 
     // Attribution comes from the session, never the request body.
