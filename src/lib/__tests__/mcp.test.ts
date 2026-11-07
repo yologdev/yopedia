@@ -1597,6 +1597,13 @@ describe("ingest_text", () => {
     ).rejects.toThrow("content is required and must be non-empty");
   });
 
+  it("rejects text content exceeding MAX_CONTENT_LENGTH", async () => {
+    const oversized = "x".repeat(100_001);
+    await expect(
+      handleIngestText({ content: oversized }),
+    ).rejects.toThrow(/too large/i);
+  });
+
   it("ingests valid text content and creates a wiki page", async () => {
     // Temporarily unset LLM keys so ingest uses the fallback (no-LLM) path
     const savedKey = process.env.ANTHROPIC_API_KEY;

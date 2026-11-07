@@ -8,6 +8,7 @@ import { enqueueOrInline } from "@/lib/ingest-async";
 import { stageText } from "@/lib/ingest-staging";
 import { getPrincipal, getServicePrincipal } from "@/lib/auth";
 import { enforceRateLimit } from "@/lib/rate-limit";
+import { MAX_CONTENT_LENGTH } from "@/lib/constants";
 import { ClientInputError, getErrorMessage } from "@/lib/errors";
 import { logger } from "@/lib/logger";
 import { addToVault, vaultOwnedBy } from "@/lib/vault";
@@ -167,6 +168,15 @@ export async function POST(request: NextRequest) {
     }
 
     const trimmedContent = content.trim();
+    // Enforce the same content-size cap the URL and PDF paths use.
+    if (trimmedContent.length > MAX_CONTENT_LENGTH) {
+      return NextResponse.json(
+        {
+          error: `Text content too large: ${trimmedContent.length.toLocaleString()} chars exceeds the ${MAX_CONTENT_LENGTH.toLocaleString()} char limit. Please shorten the input.`,
+        },
+        { status: 400 },
+      );
+    }
     const trimmedTitle = typeof title === "string" ? title.trim() : "";
     // Display title for the recent-ingests list (best-effort): given title, else
     // a title derived from the content.

@@ -64,6 +64,7 @@ import { POST as POST_BATCH } from "@/app/api/ingest/batch/route";
 import { POST as POST_REINGEST } from "@/app/api/ingest/reingest/route";
 import type { IngestResult } from "@/lib/types";
 import { ClientInputError } from "@/lib/errors";
+import { MAX_CONTENT_LENGTH } from "@/lib/constants";
 
 const mockedIngest = vi.mocked(ingest);
 const mockedIngestUrl = vi.mocked(ingestUrl);
@@ -151,6 +152,34 @@ describe("POST /api/ingest — text title optional", () => {
       makeRequest("http://localhost/api/ingest", { title: "Only a title" }),
     );
     expect(res.status).toBe(400);
+  });
+});
+
+// ===========================================================================
+// POST /api/ingest — text content size cap
+// ===========================================================================
+describe("POST /api/ingest — text content size cap", () => {
+  it("rejects text content exceeding MAX_CONTENT_LENGTH with 400", async () => {
+    const oversized = "x".repeat(MAX_CONTENT_LENGTH + 1);
+    const res = await POST(
+      makeRequest("http://localhost/api/ingest", { content: oversized }),
+    );
+    expect(res.status).toBe(400);
+    const data = await res.json();
+    expect(data.error).toMatch(/too large/i);
+    expect(data.error).toMatch(/100,000/);
+    // Must not reach the ingest function
+    expect(mockedIngest).not.toHaveBeenCalled();
+    expect(mockedEnqueue).not.toHaveBeenCalled();
+  });
+
+  it("accepts text content at exactly MAX_CONTENT_LENGTH", async () => {
+    mockedEnqueue.mockResolvedValue(true);
+    const atLimit = "x".repeat(MAX_CONTENT_LENGTH);
+    const res = await POST(
+      makeRequest("http://localhost/api/ingest", { content: atLimit }),
+    );
+    expect(res.status).toBe(200);
   });
 });
 
