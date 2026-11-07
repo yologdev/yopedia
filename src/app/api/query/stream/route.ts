@@ -7,6 +7,7 @@ import {
 } from "@/lib/constants";
 import { listReadableWikiPages, isAgentScopedType, isArtifactType } from "@/lib/wiki";
 import { getPrincipal } from "@/lib/auth";
+import { enforceRateLimit } from "@/lib/rate-limit";
 import {
   selectPagesForQuery,
   buildContext,
@@ -75,6 +76,15 @@ export async function POST(request: NextRequest) {
       return NextResponse.json(
         { error: "Sign in required to query yopedia." },
         { status: 401 },
+      );
+    }
+
+    // Cost guard — each streaming query triggers an LLM generation.
+    const rl = await enforceRateLimit("query", principal.id);
+    if (!rl.allowed) {
+      return NextResponse.json(
+        { error: "Rate limit exceeded. Please wait before querying again." },
+        { status: 429 },
       );
     }
 

@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { checkRateLimit, enforceRateLimit, type RateLimitStore } from "../rate-limit";
+import { checkRateLimit, enforceRateLimit, RATE_LIMITS, type RateLimitStore } from "../rate-limit";
 
 /** In-memory KV-ish store for the fixed-window logic. */
 class FakeStore implements RateLimitStore {
@@ -52,10 +52,70 @@ describe("checkRateLimit (fixed window)", () => {
   });
 });
 
+describe("RATE_LIMITS surface entries", () => {
+  it("has a query entry with sensible defaults", () => {
+    expect(RATE_LIMITS.query).toBeDefined();
+    expect(RATE_LIMITS.query.limit).toBe(30);
+    expect(RATE_LIMITS.query.windowSec).toBe(60);
+  });
+
+  it("has an ingest entry with sensible defaults", () => {
+    expect(RATE_LIMITS.ingest).toBeDefined();
+    expect(RATE_LIMITS.ingest.limit).toBe(10);
+    expect(RATE_LIMITS.ingest.windowSec).toBe(60);
+  });
+
+  it("preserves the existing mcp entry unchanged", () => {
+    expect(RATE_LIMITS.mcp).toBeDefined();
+    expect(RATE_LIMITS.mcp.limit).toBe(60);
+    expect(RATE_LIMITS.mcp.windowSec).toBe(60);
+  });
+});
+
+describe("checkRateLimit with query surface limits", () => {
+  it("blocks after 30 requests in the query window", async () => {
+    const store = new FakeStore();
+    const now = 3_000_000;
+    for (let i = 0; i < RATE_LIMITS.query.limit; i++) {
+      const r = await checkRateLimit(store, "query:user1", RATE_LIMITS.query, now);
+      expect(r.allowed).toBe(true);
+    }
+    const blocked = await checkRateLimit(store, "query:user1", RATE_LIMITS.query, now);
+    expect(blocked.allowed).toBe(false);
+    expect(blocked.remaining).toBe(0);
+  });
+});
+
+describe("checkRateLimit with ingest surface limits", () => {
+  it("blocks after 10 requests in the ingest window", async () => {
+    const store = new FakeStore();
+    const now = 4_000_000;
+    for (let i = 0; i < RATE_LIMITS.ingest.limit; i++) {
+      const r = await checkRateLimit(store, "ingest:user1", RATE_LIMITS.ingest, now);
+      expect(r.allowed).toBe(true);
+    }
+    const blocked = await checkRateLimit(store, "ingest:user1", RATE_LIMITS.ingest, now);
+    expect(blocked.allowed).toBe(false);
+    expect(blocked.remaining).toBe(0);
+  });
+});
+
 describe("enforceRateLimit (fail-open)", () => {
   it("allows when there's no KV store (local/test/outage)", async () => {
     // No OpenNext Cloudflare context here → getStore() is null → fail-open.
     const r = await enforceRateLimit("mcp", "anykey");
     expect(r.allowed).toBe(true);
+  });
+
+  it("fails open for the query surface without KV", async () => {
+    const r = await enforceRateLimit("query", "anykey");
+    expect(r.allowed).toBe(true);
+    expect(r.remaining).toBe(-1);
+  });
+
+  it("fails open for the ingest surface without KV", async () => {
+    const r = await enforceRateLimit("ingest", "anykey");
+    expect(r.allowed).toBe(true);
+    expect(r.remaining).toBe(-1);
   });
 });

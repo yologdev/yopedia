@@ -27,6 +27,10 @@ export interface RateLimitRule {
 export const RATE_LIMITS = {
   /** Remote MCP: 1 unit per POST (batches are already capped at 20). */
   mcp: { limit: 60, windowSec: 60 } as RateLimitRule,
+  /** Query (streaming + non-streaming): each call triggers an LLM generation. */
+  query: { limit: 30, windowSec: 60 } as RateLimitRule,
+  /** Ingest: each call triggers LLM synthesis + embedding. */
+  ingest: { limit: 10, windowSec: 60 } as RateLimitRule,
 };
 
 /** The KV-backed store, or null outside an OpenNext Cloudflare request. */
