@@ -69,13 +69,20 @@ Body — either a URL:
 { "text": "Notes the agent learned today…", "title": "Daily learnings" }
 ```
 
+Both forms accept an optional **`tags`** field — an array of strings that tag the
+resulting page for easier filtering and organization:
+
+```json
+{ "url": "https://example.com/post", "tags": ["research", "llm"] }
+```
+
 Example:
 
 ```bash
 curl -X POST "$BASE/api/agents/alice--yoyo/ingest" \
   -H "Authorization: Bearer $YOYO_TOKEN" \
   -H "Content-Type: application/json" \
-  -d '{"url":"https://example.com/post"}'
+  -d '{"url":"https://example.com/post","tags":["research","llm"]}'
 # → { "queued": true, "jobId": "f1e2…" }
 ```
 
