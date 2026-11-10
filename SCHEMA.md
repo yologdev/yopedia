@@ -603,8 +603,8 @@ Current checks performed by `lint()` in `src/lib/lint.ts`:
   talk page to resolve the dispute through discussion.
 - **`supersedes-dangling`** (warning) — page declares a `supersedes` field
   pointing to a slug that doesn't exist on disk. The supersession chain is
-  broken. No auto-fix — create the target page or remove the `supersedes`
-  field.
+  broken. Auto-fix: clears the dangling `supersedes` field from frontmatter
+  after re-verifying the target page is still missing.
 - **`incomplete-coverage`** (info) — LLM comparison of raw source content
   (`raw/<slug>.md`) against the corresponding wiki page (`wiki/<slug>.md`)
   flags cases where significant information from the source is absent from
@@ -613,6 +613,13 @@ Current checks performed by `lint()` in `src/lib/lint.ts`:
   source on disk. Requires an LLM key; skipped when no key is configured.
   No auto-fix — requires re-ingesting with an updated prompt or manually
   adding the missing content.
+- **`dead-source`** (warning for 4xx, info for 5xx/network) — page's
+  `source_url` returns an HTTP error when checked. A random sample of pages
+  with `source_url` set is probed via HEAD request each lint run. 4xx
+  responses are treated as confirmed dead (warning); 5xx responses are
+  treated as potentially transient (info). Auto-fix: clears `source_url`
+  from frontmatter for confirmed-dead 4xx sources; 5xx sources are not
+  auto-fixed (transient failures should be rechecked later).
 
 ## Provider configuration
 
@@ -644,9 +651,10 @@ sessions should pick from this list:
   via RRF. Batch rebuild of the full vector index is available via the Settings
   page (`/api/settings/rebuild-embeddings`).
   Anthropic-only users see no regression (pure BM25 fallback).
-- Lint auto-fix handles nine of sixteen checks (`orphan-page`, `stale-index`,
+- Lint auto-fix handles eleven of seventeen checks (`orphan-page`, `stale-index`,
   `empty-page`, `broken-link`, `missing-crossref`, `contradiction`,
-  `missing-concept-page`, `stale-page`, `unmigrated-page`) via
+  `missing-concept-page`, `stale-page`, `unmigrated-page`,
+  `supersedes-dangling`, `dead-source`) via
   `POST /api/lint/fix`.
   The `contradiction` fix uses the LLM to rewrite the affected page.
   The `missing-concept-page` fix generates a stub page via the LLM.
@@ -655,15 +663,17 @@ sessions should pick from this list:
   refreshes `valid_from` to today.
   The `unmigrated-page` fix adds sensible yopedia defaults (confidence 0.5,
   expiry 90 days out, authors `["system"]`).
-  The seven exceptions without auto-fix are: `low-confidence` (requires
+  The `supersedes-dangling` fix clears the dangling `supersedes` field from
+  frontmatter after re-verifying the target page is still missing.
+  The `dead-source` fix clears `source_url` from frontmatter for
+  confirmed-dead 4xx sources; 5xx sources are skipped (transient).
+  The six exceptions without auto-fix are: `low-confidence` (requires
   ingesting additional sources), `duplicate-entity` (requires human judgment
   to merge), `uncited-claims` (requires adding citations or ingesting
   sources), `unresolved-discussions` (requires reviewing and resolving
   open threads on the talk page), `disputed-page` (requires resolving
-  the dispute through discussion), `supersedes-dangling` (requires
-  creating the target page or removing the supersedes field), and
-  `incomplete-coverage` (requires ingesting additional sources to
-  improve topic coverage).
+  the dispute through discussion), and `incomplete-coverage` (requires
+  ingesting additional sources to improve topic coverage).
 - Long documents are chunked at ingest time (12K chars per chunk ≈ 3K
   tokens) so they fit within provider context windows. Token counting is
   character-based (not tokenizer-exact), which is conservative but not
