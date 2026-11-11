@@ -14,6 +14,7 @@ import { extractSummary } from "./ingest";
 import { loadPageConventions } from "./schema";
 import { serializeFrontmatter } from "./frontmatter";
 import { serializeSources, buildSourceEntry } from "./sources";
+import { resolveAlias } from "./alias-index";
 import {
   buildCorpusStats,
   bm25Score,
@@ -361,9 +362,7 @@ export async function saveAnswerToWiki(
   owner?: string,
   author?: string,
 ): Promise<{ slug: string }> {
-  const slug = explicitSlug || slugify(title);
-
-  if (!slug) {
+  if (!explicitSlug && !slugify(title)) {
     throw new Error("Title must produce a valid slug");
   }
 
@@ -374,6 +373,19 @@ export async function saveAnswerToWiki(
   // HTML and slides are personal rendered artifacts (owned, typed, kept out of
   // the commons/search corpus); plain markdown is a system-owned commons page.
   const isArtifact = contentType !== "markdown";
+
+  // --- Alias resolution (markdown saves only) ---
+  // HTML/slides are personal artifacts and always get their own slug.
+  // For markdown saves, check whether the title matches an existing page's
+  // alias so the answer lands on the canonical page instead of creating a
+  // duplicate (the same resolution the ingest pipeline performs).
+  let slug = explicitSlug || slugify(title);
+  if (!isArtifact && !explicitSlug) {
+    const resolved = await resolveAlias(title);
+    if (resolved) {
+      slug = resolved;
+    }
+  }
 
   // Bake illustrations as an idempotent safety net. Answers from `query()`
   // already have their `yoyo-illustration` directives baked into `/api/assets/…`
