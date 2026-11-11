@@ -6,6 +6,7 @@ import { searchIndex, buildContext, query, saveAnswerToWiki, buildCorpusStats, b
 import { writeWikiPage, updateIndex, ensureDirectories, readWikiPage, readWikiPageWithFrontmatter, listWikiPages } from "../wiki";
 import { serializeFrontmatter } from "../frontmatter";
 import { serializeSources, buildSourceEntry } from "../sources";
+import { resetAliasIndex } from "../alias-index";
 import { registerAgent } from "../agents";
 import { _resetStorage } from "../storage";
 import type { AgentProfile } from "../types";
@@ -75,6 +76,7 @@ afterEach(async () => {
     process.env.DATA_DIR = originalDataDir;
   }
   _resetStorage();
+  resetAliasIndex();
   await fs.rm(tmpDir, { recursive: true, force: true });
 });
 
@@ -1270,6 +1272,99 @@ describe("saveAnswerToWiki", () => {
 
     // Empty array should be treated the same as omitted
     expect(parsed!.frontmatter.sources).toBeUndefined();
+  });
+
+  // -------------------------------------------------------------------------
+  // Alias resolution — the core anti-duplication property (#1010)
+  // -------------------------------------------------------------------------
+
+  it("resolves to an existing canonical page when title matches an alias", async () => {
+    await ensureDirectories();
+
+    // Seed a canonical page with an alias
+    const fm = {
+      created: "2026-01-01",
+      updated: "2026-01-01",
+      aliases: ["React.js", "ReactJS"],
+    };
+    const canonicalContent = serializeFrontmatter(
+      fm,
+      "# React\n\nReact is a JavaScript library for building UIs.",
+    );
+    await writeWikiPage("react", canonicalContent);
+    await updateIndex([
+      { slug: "react", title: "React", summary: "React is a JavaScript library" },
+    ]);
+
+    // Reset the alias index so it rebuilds from the freshly written pages
+    resetAliasIndex();
+
+    // Save a query answer whose title matches an alias of the existing page
+    const result = await saveAnswerToWiki(
+      "React.js",
+      "React.js is maintained by Meta and a community of developers.",
+    );
+
+    // Should land on the canonical slug, not create a new "react-js" page
+    expect(result.slug).toBe("react");
+
+    // Verify the content was written to the canonical page
+    const page = await readWikiPage("react");
+    expect(page).not.toBeNull();
+    expect(page!.content).toContain("maintained by Meta");
+
+    // Verify no separate "react-js" page was created
+    const entries = await listWikiPages();
+    const reactJs = entries.find((e) => e.slug === "react-js");
+    expect(reactJs).toBeUndefined();
+  });
+
+  it("falls back to slugify(title) when no alias match exists", async () => {
+    await ensureDirectories();
+    resetAliasIndex();
+
+    const result = await saveAnswerToWiki(
+      "Svelte Framework",
+      "Svelte is a compiler-based framework.",
+    );
+
+    expect(result.slug).toBe("svelte-framework");
+    const page = await readWikiPage("svelte-framework");
+    expect(page).not.toBeNull();
+    expect(page!.content).toContain("Svelte is a compiler-based framework");
+  });
+
+  it("does not apply alias resolution for HTML saves (personal artifacts)", async () => {
+    await ensureDirectories();
+
+    // Seed a canonical page with an alias
+    const fm = {
+      created: "2026-01-01",
+      updated: "2026-01-01",
+      aliases: ["Vue.js"],
+    };
+    const canonicalContent = serializeFrontmatter(
+      fm,
+      "# Vue\n\nVue is a progressive JavaScript framework.",
+    );
+    await writeWikiPage("vue", canonicalContent);
+    await updateIndex([
+      { slug: "vue", title: "Vue", summary: "Vue is a progressive framework" },
+    ]);
+    resetAliasIndex();
+
+    // Save an HTML artifact whose title matches the alias
+    const result = await saveAnswerToWiki(
+      "Vue.js",
+      "<!doctype html><html><body><h1>Vue Chart</h1></body></html>",
+      undefined,
+      undefined,
+      "html",
+      "alice",
+    );
+
+    // HTML saves are personal artifacts — should NOT resolve to the canonical slug
+    expect(result.slug).toBe("vue-js");
   });
 });
 
