@@ -6,6 +6,7 @@ import {
   withPageCache,
   isAgentScopedType,
   isArtifactType,
+  tryReadWikiPageWithFrontmatter,
 } from "./wiki";
 import { slugify } from "./slugify";
 import { htmlToPlainText, stripHtmlFence } from "./html";
@@ -383,7 +384,29 @@ export async function saveAnswerToWiki(
   if (!isArtifact && !explicitSlug) {
     const resolved = await resolveAlias(title);
     if (resolved) {
-      slug = resolved;
+      // Ownership guard: the alias index is global (all pages, all owners, all
+      // visibilities). Before merging into the resolved page, verify the caller
+      // may actually write it. If the resolved page is private or owned by
+      // another user, fall back to a fresh slug so the save creates a new page
+      // instead of silently overwriting another user's content.
+      let canMerge = true;
+      const existingPage = await tryReadWikiPageWithFrontmatter(resolved, "query");
+      if (existingPage) {
+        const fm = existingPage.frontmatter;
+        if (fm.visibility === "private") {
+          // Never overwrite a private page via alias resolution.
+          canMerge = false;
+        } else if (fm.owner && typeof fm.owner === "string") {
+          // Page has an owner — only the same owner may merge into it.
+          // If the caller is anonymous (no owner), they cannot overwrite
+          // owned pages.
+          canMerge = !!owner && fm.owner === owner;
+        }
+        // Unowned public page: anyone may merge (that's the commons).
+      }
+      if (canMerge) {
+        slug = resolved;
+      }
     }
   }
 
