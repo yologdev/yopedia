@@ -69,7 +69,19 @@ Body — either a URL:
 { "text": "Notes the agent learned today…", "title": "Daily learnings" }
 ```
 
-Both forms accept an optional **`tags`** field — an array of strings that tag the
+…or an image URL:
+
+```json
+{ "imageUrl": "https://example.com/diagram.png" }
+```
+
+…or a PDF URL:
+
+```json
+{ "pdfUrl": "https://example.com/paper.pdf" }
+```
+
+All four forms accept an optional **`tags`** field — an array of strings that tag the
 resulting page for easier filtering and organization:
 
 ```json
@@ -79,16 +91,29 @@ resulting page for easier filtering and organization:
 Example:
 
 ```bash
+# Ingest a URL
 curl -X POST "$BASE/api/agents/alice--yoyo/ingest" \
   -H "Authorization: Bearer $YOYO_TOKEN" \
   -H "Content-Type: application/json" \
   -d '{"url":"https://example.com/post","tags":["research","llm"]}'
 # → { "queued": true, "jobId": "f1e2…" }
+
+# Ingest an image
+curl -X POST "$BASE/api/agents/alice--yoyo/ingest" \
+  -H "Authorization: Bearer $YOYO_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"imageUrl":"https://example.com/diagram.png"}'
+
+# Ingest a PDF
+curl -X POST "$BASE/api/agents/alice--yoyo/ingest" \
+  -H "Authorization: Bearer $YOYO_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"pdfUrl":"https://example.com/paper.pdf"}'
 ```
 
 Responses: `200` with `{ queued: true, jobId }` (the ingest was accepted and is
 processing); `401` (missing/invalid token); `403` (token is for a different
-agent); `400` (no url/text); `500` (couldn't enqueue — retry).
+agent); `400` (no url/text/imageUrl/pdfUrl); `500` (couldn't enqueue — retry).
 
 ---
 

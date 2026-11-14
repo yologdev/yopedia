@@ -6,6 +6,7 @@ import {
   ingestUrl,
   ingest,
   ingestImage,
+  ingestPdf,
   deriveTitleFromContent,
   type IngestOptions,
 } from "@/lib/ingest";
@@ -149,6 +150,7 @@ export async function POST(req: Request, { params }: RouteParams) {
       text?: unknown;
       title?: unknown;
       imageUrl?: unknown;
+      pdfUrl?: unknown;
       sourceUrl?: unknown;
       asOwner?: unknown;
       vaultId?: unknown;
@@ -164,9 +166,10 @@ export async function POST(req: Request, { params }: RouteParams) {
     const text = typeof body.text === "string" ? body.text : "";
     const title = typeof body.title === "string" ? body.title : "";
     const imageUrl = typeof body.imageUrl === "string" ? body.imageUrl.trim() : "";
-    if (!url && !text && !imageUrl) {
+    const pdfUrl = typeof body.pdfUrl === "string" ? body.pdfUrl.trim() : "";
+    if (!url && !text && !imageUrl && !pdfUrl) {
       return NextResponse.json(
-        { error: "Provide a 'url', 'text', or 'imageUrl' to ingest." },
+        { error: "Provide a 'url', 'text', 'imageUrl', or 'pdfUrl' to ingest." },
         { status: 400 },
       );
     }
@@ -279,8 +282,9 @@ export async function POST(req: Request, { params }: RouteParams) {
       (text ? deriveTitleFromContent(text) : "") ||
       url ||
       imageUrl ||
+      pdfUrl ||
       "Untitled";
-    const jobUrl = url || imageUrl || undefined;
+    const jobUrl = url || imageUrl || pdfUrl || undefined;
     const jobId = crypto.randomUUID();
     await createIngestJob({
       jobId,
@@ -305,6 +309,8 @@ export async function POST(req: Request, { params }: RouteParams) {
     let task: Task;
     if (imageUrl) {
       task = { kind: "ingest", source: "image", url: imageUrl, ...attribution };
+    } else if (pdfUrl) {
+      task = { kind: "ingest", source: "pdf", url: pdfUrl, ...attribution };
     } else if (url) {
       task = { kind: "ingest", url, ...attribution };
     } else if (text.length <= MAX_INLINE_CONTENT_CHARS) {
@@ -329,9 +335,11 @@ export async function POST(req: Request, { params }: RouteParams) {
     return await enqueueOrInline(jobId, task, async () => {
       const result = imageUrl
         ? await ingestImage({ imageUrl }, { ...opts, title: title || undefined })
-        : url
-          ? await ingestUrl(url, opts)
-          : await ingest(title || "Untitled", text, { ...opts, sourceUrl });
+        : pdfUrl
+          ? await ingestPdf({ pdfUrl }, { ...opts, title: title || undefined })
+          : url
+            ? await ingestUrl(url, opts)
+            : await ingest(title || "Untitled", text, { ...opts, sourceUrl });
       if (learningFor) {
         try { await addAgentLearningPage(learningFor, result.primarySlug); }
         catch (e) { logger.error("agents", `learning-page attach failed for ${learningFor}:`, e); }

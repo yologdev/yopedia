@@ -13,6 +13,7 @@ vi.mock("@/lib/auth", () => ({
 vi.mock("@/lib/ingest", () => ({
   ingestUrl: vi.fn(),
   ingest: vi.fn(),
+  ingestPdf: vi.fn(),
 }));
 
 vi.mock("@/lib/vault", () => ({
@@ -30,7 +31,7 @@ vi.mock("@/lib/tasks", async (orig) => ({
 
 import { verifyAgentToken, addAgentLearningPage, getAgent } from "@/lib/agents";
 import { getServicePrincipal } from "@/lib/auth";
-import { ingestUrl, ingest } from "@/lib/ingest";
+import { ingestUrl, ingest, ingestPdf } from "@/lib/ingest";
 import { addToVault, vaultOwnedBy } from "@/lib/vault";
 import { enqueueTask } from "@/lib/tasks";
 import { POST } from "@/app/api/agents/[id]/ingest/route";
@@ -42,6 +43,7 @@ const mockedGetAgent = vi.mocked(getAgent);
 const mockedServicePrincipal = vi.mocked(getServicePrincipal);
 const mockedIngestUrl = vi.mocked(ingestUrl);
 const mockedIngest = vi.mocked(ingest);
+const mockedIngestPdf = vi.mocked(ingestPdf);
 const mockedAddToVault = vi.mocked(addToVault);
 const mockedVaultOwnedBy = vi.mocked(vaultOwnedBy);
 
@@ -76,6 +78,13 @@ beforeEach(() => {
     wikiPages: ["text-page"],
     indexUpdated: true,
     rawPath: "raw/y",
+  });
+  mockedIngestPdf.mockResolvedValue({
+    primarySlug: "pdf-page",
+    relatedUpdated: [],
+    wikiPages: ["pdf-page"],
+    indexUpdated: true,
+    rawPath: "raw/z",
   });
 });
 
@@ -414,6 +423,47 @@ describe("POST /api/agents/[id]/ingest", () => {
       );
       expect(res.status).toBe(200);
       expect(mockedAddToVault).toHaveBeenCalledWith("alice--default", "ingested-page");
+    });
+  });
+
+  describe("pdfUrl", () => {
+    it("ingests a PDF URL and attaches it to learnings", async () => {
+      const res = await POST(
+        req({ pdfUrl: "https://example.com/paper.pdf" }, "alice--yoyo.s"),
+        { params },
+      );
+      expect(res.status).toBe(200);
+      expect((await res.json()).slug).toBe("pdf-page");
+      expect(mockedIngestPdf).toHaveBeenCalledWith(
+        { pdfUrl: "https://example.com/paper.pdf" },
+        expect.objectContaining({
+          author: "alice--yoyo",
+          owner: "alice--yoyo",
+          pageType: "agent-knowledge",
+        }),
+      );
+      expect(mockedAddLearning).toHaveBeenCalledWith("alice--yoyo", "pdf-page");
+    });
+
+    it("does not call ingestUrl or ingest for pdfUrl", async () => {
+      await POST(
+        req({ pdfUrl: "https://example.com/paper.pdf" }, "alice--yoyo.s"),
+        { params },
+      );
+      expect(mockedIngestUrl).not.toHaveBeenCalled();
+      expect(mockedIngest).not.toHaveBeenCalled();
+    });
+  });
+
+  describe("error message mentions all four source types", () => {
+    it("returns 400 with all four source types in the hint", async () => {
+      const res = await POST(req({}, "alice--yoyo.s"), { params });
+      expect(res.status).toBe(400);
+      const json = await res.json();
+      expect(json.error).toContain("url");
+      expect(json.error).toContain("text");
+      expect(json.error).toContain("imageUrl");
+      expect(json.error).toContain("pdfUrl");
     });
   });
 
