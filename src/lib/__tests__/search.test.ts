@@ -10,6 +10,12 @@ vi.mock("../llm", () => ({
   callLLM: vi.fn(async () => "[]"),
 }));
 
+// Mock auth for route handler tests — existing direct-call tests pass
+// principal explicitly, so this doesn't affect them.
+vi.mock("@/lib/auth", () => ({
+  getPrincipal: vi.fn(async () => null),
+}));
+
 // Stub the vector primitives so findSimilarPages / findRelatedPages tests control
 // the ranking without a real embedding store; keep every other export real.
 vi.mock("../embeddings", async (orig) => {
@@ -1606,5 +1612,92 @@ describe("findRelatedPages — candidate prefilter", () => {
     expect(mockedSearchByVector).not.toHaveBeenCalled();
     const userMessage = mockedCallLLM.mock.calls[0][1] as string;
     expect(indexLines(userMessage)).toHaveLength(10);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// GET /api/wiki/search — limit parameter
+// ---------------------------------------------------------------------------
+
+describe("GET /api/wiki/search limit parameter", () => {
+  async function callSearch(params: string) {
+    const { GET } = await import("@/app/api/wiki/search/route");
+    const req = new Request(`http://localhost/api/wiki/search?${params}`);
+    return GET(req);
+  }
+
+  it("defaults to 10 results when no limit is specified", async () => {
+    await ensureDirectories();
+    // Create 12 pages so we can verify the default cap at 10
+    const entries: { title: string; slug: string; summary: string }[] = [];
+    for (let i = 0; i < 12; i++) {
+      const slug = `limit-default-${i}`;
+      await writeWikiPage(slug, `# Page ${i}\n\nSome searchterm content here.`);
+      entries.push({ title: `Page ${i}`, slug, summary: "s" });
+    }
+    await updateIndex(entries);
+
+    const res = await callSearch("q=searchterm");
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.results.length).toBeLessThanOrEqual(10);
+  });
+
+  it("respects a custom limit=5", async () => {
+    await ensureDirectories();
+    const entries: { title: string; slug: string; summary: string }[] = [];
+    for (let i = 0; i < 8; i++) {
+      const slug = `limit-five-${i}`;
+      await writeWikiPage(slug, `# Page ${i}\n\nSome uniquefiveterm content here.`);
+      entries.push({ title: `Page ${i}`, slug, summary: "s" });
+    }
+    await updateIndex(entries);
+
+    const res = await callSearch("q=uniquefiveterm&limit=5");
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.results.length).toBeLessThanOrEqual(5);
+  });
+
+  it("clamps limit=0 to 1", async () => {
+    await ensureDirectories();
+    await writeWikiPage("clamp-zero", "# Clamp\n\nClampzero content.");
+    await updateIndex([{ title: "Clamp", slug: "clamp-zero", summary: "s" }]);
+
+    const res = await callSearch("q=clampzero&limit=0");
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    // Must return exactly 1 result — proves clamping from 0 to 1
+    expect(body.results.length).toBe(1);
+  });
+
+  it("clamps limit=999 to 50", async () => {
+    await ensureDirectories();
+    // Create 55 pages so we can prove the cap at 50 (not unclamped 999)
+    const entries: { title: string; slug: string; summary: string }[] = [];
+    for (let i = 0; i < 55; i++) {
+      const slug = `clamp-high-${i}`;
+      await writeWikiPage(slug, `# High ${i}\n\nClamphigh content here.`);
+      entries.push({ title: `High ${i}`, slug, summary: "s" });
+    }
+    await updateIndex(entries);
+
+    const res = await callSearch("q=clamphigh&limit=999");
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    // All 55 pages match, but the clamped limit of 50 should cap results
+    expect(body.results.length).toBeLessThanOrEqual(50);
+    expect(body.results.length).toBeGreaterThan(0);
+  });
+
+  it("ignores non-numeric limit and falls back to default", async () => {
+    await ensureDirectories();
+    await writeWikiPage("limit-nan", "# NaN\n\nLimitnan content.");
+    await updateIndex([{ title: "NaN", slug: "limit-nan", summary: "s" }]);
+
+    const res = await callSearch("q=limitnan&limit=abc");
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.results.length).toBeGreaterThanOrEqual(1);
   });
 });
