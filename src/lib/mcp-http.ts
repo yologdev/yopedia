@@ -146,12 +146,21 @@ function jsonText(data: unknown): string {
 // Curated tool registry
 // ---------------------------------------------------------------------------
 
+interface ToolAnnotations {
+  readOnlyHint: boolean;
+  destructiveHint: boolean;
+  idempotentHint: boolean;
+  openWorldHint: boolean;
+}
+
 interface ToolDef {
   name: string;
   description: string;
   inputSchema: Record<string, unknown>;
   /** Write tools require an authenticated principal; reads don't. */
   write: boolean;
+  /** MCP v2 tool annotations — safety hints for agent clients. */
+  annotations: ToolAnnotations;
   run: (
     args: Record<string, unknown>,
     principal: Principal | null,
@@ -190,6 +199,7 @@ export const MCP_TOOLS: ToolDef[] = [
       ["query"],
     ),
     write: false,
+    annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
     run: (a) => handleSearchWiki(a as Parameters<typeof handleSearchWiki>[0]),
   },
   {
@@ -197,6 +207,7 @@ export const MCP_TOOLS: ToolDef[] = [
     description: "Read a single wiki page (markdown + frontmatter) by slug.",
     inputSchema: schema({ slug: str("Page slug") }, ["slug"]),
     write: false,
+    annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
     run: (a) => handleReadPage(a as Parameters<typeof handleReadPage>[0]),
   },
   {
@@ -207,6 +218,7 @@ export const MCP_TOOLS: ToolDef[] = [
       limit: { type: "number", description: "Max results" },
     }),
     write: false,
+    annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
     run: (a) => handleListPages(a as Parameters<typeof handleListPages>[0]),
   },
   {
@@ -222,6 +234,7 @@ export const MCP_TOOLS: ToolDef[] = [
       ["question"],
     ),
     write: false,
+    annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
     run: (a) => handleQueryWiki(a as Parameters<typeof handleQueryWiki>[0]),
   },
   {
@@ -236,6 +249,7 @@ export const MCP_TOOLS: ToolDef[] = [
       ["url"],
     ),
     write: true,
+    annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: true },
     run: (a, p) =>
       handleIngestUrl(
         attributed(a, p!.handle) as Parameters<typeof handleIngestUrl>[0],
@@ -259,6 +273,7 @@ export const MCP_TOOLS: ToolDef[] = [
       ["urls"],
     ),
     write: true,
+    annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: true },
     run: (a, p) =>
       handleBatchIngest(
         attributed(a, p!.handle) as Parameters<typeof handleBatchIngest>[0],
@@ -276,6 +291,7 @@ export const MCP_TOOLS: ToolDef[] = [
       ["content"],
     ),
     write: true,
+    annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false },
     run: (a, p) =>
       handleIngestText(
         attributed(a, p!.handle) as Parameters<typeof handleIngestText>[0],
@@ -294,6 +310,7 @@ export const MCP_TOOLS: ToolDef[] = [
       ["url"],
     ),
     write: true,
+    annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: true },
     run: (a, p) =>
       handleIngestImage(
         attributed(a, p!.handle) as Parameters<typeof handleIngestImage>[0],
@@ -312,6 +329,7 @@ export const MCP_TOOLS: ToolDef[] = [
       ["pdf_url"],
     ),
     write: true,
+    annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: true },
     run: (a, p) =>
       handleIngestPdf(
         attributed(a, p!.handle) as Parameters<typeof handleIngestPdf>[0],
@@ -330,6 +348,7 @@ export const MCP_TOOLS: ToolDef[] = [
       ["url", "triggered_by"],
     ),
     write: true,
+    annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: true },
     run: (a, p) =>
       handleIngestXMention(
         attributed(a, p!.handle) as Parameters<typeof handleIngestXMention>[0],
@@ -347,6 +366,7 @@ export const MCP_TOOLS: ToolDef[] = [
       ["slug", "content"],
     ),
     write: true,
+    annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false },
     run: (a, p) =>
       handleCreatePage(
         attributed(a, p!.handle) as Parameters<typeof handleCreatePage>[0],
@@ -365,6 +385,7 @@ export const MCP_TOOLS: ToolDef[] = [
       ["slug", "content"],
     ),
     write: true,
+    annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false },
     run: (a, p) => {
       const { author, ...rest } = attributed(a, p!.handle) as Record<string, unknown>;
       return handleUpdatePage({
@@ -385,6 +406,7 @@ export const MCP_TOOLS: ToolDef[] = [
       ["slug"],
     ),
     write: true,
+    annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: false, openWorldHint: false },
     run: (a, p) => {
       const { author } = attributed(a, p!.handle) as Record<string, unknown>;
       return handleDeletePage({
@@ -408,6 +430,7 @@ export const MCP_TOOLS: ToolDef[] = [
       ["question", "answer"],
     ),
     write: true,
+    annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false },
     run: (a, p) =>
       handleSaveQueryAnswer(
         attributed(a, p!.handle) as Parameters<typeof handleSaveQueryAnswer>[0],
@@ -418,6 +441,7 @@ export const MCP_TOOLS: ToolDef[] = [
     description: "Re-fetch a page's original source and refresh it.",
     inputSchema: schema({ slug: str("Page slug to re-ingest") }, ["slug"]),
     write: true,
+    annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false },
     // Enforce the same write ACL as the REST reingest route: you can only
     // re-synthesize a page you may write (public commons = collectively
     // editable; another user's PRIVATE page = denied). Without this, any
@@ -442,6 +466,7 @@ export const MCP_TOOLS: ToolDef[] = [
       cap: { type: "number", description: "Max tasks to return (default 10)" },
     }),
     write: false,
+    annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
     run: (a) =>
       handleMaintenanceScan(
         a as Parameters<typeof handleMaintenanceScan>[0],
@@ -461,6 +486,7 @@ export const MCP_TOOLS: ToolDef[] = [
       ["slug", "agentId"],
     ),
     write: true,
+    annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false },
     run: async (a, p) => {
       const args = a as Parameters<typeof handlePublishToCommons>[0];
       // Verify the caller owns the agent whose page is being published.
@@ -492,6 +518,7 @@ export const MCP_TOOLS: ToolDef[] = [
       ["slug", "metadata"],
     ),
     write: true,
+    annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false },
     run: (a, p) =>
       handleUpdateMetadata({
         ...(a as { slug: string; metadata: Record<string, unknown> }),
@@ -513,6 +540,7 @@ export const MCP_TOOLS: ToolDef[] = [
       minSeverity: str("Minimum severity: error | warning | info (default: info)"),
     }),
     write: false,
+    annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
     run: (a) => handleLintWiki(a as Parameters<typeof handleLintWiki>[0]),
   },
   {
@@ -530,6 +558,7 @@ export const MCP_TOOLS: ToolDef[] = [
       ["type", "slug"],
     ),
     write: true,
+    annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false },
     run: (a, p) =>
       handleFixLintIssue({
         ...(a as { type: string; slug: string; target?: string; message?: string }),
@@ -549,6 +578,7 @@ export const MCP_TOOLS: ToolDef[] = [
       ["pageSlug", "threadIndex"],
     ),
     write: true,
+    annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: true },
     run: (a, p) =>
       handleReconcilePage({
         ...(a as { pageSlug: string; threadIndex: number }),
@@ -570,6 +600,7 @@ export const MCP_TOOLS: ToolDef[] = [
       ["from", "into"],
     ),
     write: true,
+    annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: false, openWorldHint: false },
     run: (a, p) =>
       mergePages({
         from: (a as { from: string }).from,
@@ -588,6 +619,7 @@ export const MCP_TOOLS: ToolDef[] = [
       ["pageSlug"],
     ),
     write: false,
+    annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
     run: (a) =>
       handleListDiscussions(a as Parameters<typeof handleListDiscussions>[0]),
   },
@@ -604,6 +636,7 @@ export const MCP_TOOLS: ToolDef[] = [
       ["pageSlug", "threadIndex"],
     ),
     write: false,
+    annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
     run: (a) =>
       handleReadDiscussion(a as Parameters<typeof handleReadDiscussion>[0]),
   },
@@ -620,6 +653,7 @@ export const MCP_TOOLS: ToolDef[] = [
       ["pageSlug", "title", "body"],
     ),
     write: true,
+    annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false },
     run: (a, p) =>
       handleCreateDiscussion({
         ...(a as { pageSlug: string; title: string; body: string }),
@@ -640,6 +674,7 @@ export const MCP_TOOLS: ToolDef[] = [
       ["pageSlug", "threadIndex", "content"],
     ),
     write: true,
+    annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false },
     run: (a, p) =>
       handleAddComment({
         ...(a as { pageSlug: string; threadIndex: number; content: string; parentId?: string }),
@@ -659,6 +694,7 @@ export const MCP_TOOLS: ToolDef[] = [
       ["pageSlug", "threadIndex", "resolution"],
     ),
     write: true,
+    annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false },
     run: (a, _p) =>
       handleResolveDiscussion(
         a as Parameters<typeof handleResolveDiscussion>[0],
@@ -674,6 +710,7 @@ export const MCP_TOOLS: ToolDef[] = [
       ["slug"],
     ),
     write: false,
+    annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
     run: (a) =>
       handleListRevisions(a as Parameters<typeof handleListRevisions>[0]),
   },
@@ -690,6 +727,7 @@ export const MCP_TOOLS: ToolDef[] = [
       ["slug", "timestamp"],
     ),
     write: false,
+    annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
     run: (a) =>
       handleReadRevision(a as Parameters<typeof handleReadRevision>[0]),
   },
@@ -705,6 +743,7 @@ export const MCP_TOOLS: ToolDef[] = [
       ["slug", "timestamp"],
     ),
     write: true,
+    annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false },
     run: (a, p) =>
       handleRevertRevision({
         ...(a as { slug: string; timestamp: number }),
@@ -721,6 +760,7 @@ export const MCP_TOOLS: ToolDef[] = [
       owner: str("Owner handle (defaults to your own handle when authenticated)"),
     }),
     write: false,
+    annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
     run: (a, p) => {
       const owner = (a as { owner?: string }).owner ?? p?.handle;
       if (!owner) {
@@ -744,6 +784,7 @@ export const MCP_TOOLS: ToolDef[] = [
       ["vault"],
     ),
     write: false,
+    annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
     run: (a, p) => {
       const args = a as { owner?: string; vault: string };
       const owner = args.owner ?? p?.handle;
@@ -768,6 +809,7 @@ export const MCP_TOOLS: ToolDef[] = [
       ["slug", "vault"],
     ),
     write: true,
+    annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false },
     run: (a, p) => {
       const args = a as { slug: string; vault: string };
       return handleVaultCurate({ slug: args.slug, owner: p!.handle, vault: args.vault });
@@ -788,6 +830,7 @@ export const MCP_TOOLS: ToolDef[] = [
       ["name"],
     ),
     write: true,
+    annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false },
     run: (a, p) => {
       const args = a as { name: string; visibility?: "public" | "private" };
       return handleVaultCreate({ owner: p!.handle, name: args.name, visibility: args.visibility });
@@ -805,6 +848,7 @@ export const MCP_TOOLS: ToolDef[] = [
       ["slug", "vault"],
     ),
     write: true,
+    annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false },
     run: (a, p) => {
       const args = a as { slug: string; vault: string };
       return handleVaultUncurate({ slug: args.slug, owner: p!.handle, vault: args.vault });
@@ -821,6 +865,7 @@ export const MCP_TOOLS: ToolDef[] = [
       ["agent_id"],
     ),
     write: false,
+    annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
     run: (a) =>
       handleAgentContext(a as Parameters<typeof handleAgentContext>[0]),
   },
@@ -830,6 +875,7 @@ export const MCP_TOOLS: ToolDef[] = [
       "List all registered agents with their IDs, names, descriptions, and timestamps.",
     inputSchema: schema({}),
     write: false,
+    annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
     run: () => handleListAgents(),
   },
   {
@@ -861,6 +907,7 @@ export const MCP_TOOLS: ToolDef[] = [
       },
     }),
     write: true,
+    annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false },
     run: async (a, p) => {
       // Resolve the caller's agent id from their principal and verify ownership.
       const agentId = agentIdFor(p!.handle);
@@ -902,6 +949,7 @@ export const MCP_TOOLS: ToolDef[] = [
       ["agent_id", "name", "description", "sections"],
     ),
     write: true,
+    annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false },
     run: (a, p) => {
       // Stamp the authenticated caller as owner.
       const args = { ...a, owner: p!.handle } as Parameters<typeof handleSeedAgent>[0];
@@ -914,6 +962,7 @@ export const MCP_TOOLS: ToolDef[] = [
       "Delete the authenticated caller's agent profile. The agent_id must belong to the caller.",
     inputSchema: schema({ agent_id: str("Agent ID to delete") }, ["agent_id"]),
     write: true,
+    annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: false, openWorldHint: false },
     run: async (a, p) => {
       const agentId = String(a.agent_id);
       await assertCanMutateAgent(agentId, p!.handle);
@@ -927,6 +976,7 @@ export const MCP_TOOLS: ToolDef[] = [
       "Delete a vault owned by the authenticated caller. The vault_id must belong to the caller.",
     inputSchema: schema({ vault_id: str("Vault ID to delete") }, ["vault_id"]),
     write: true,
+    annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: false, openWorldHint: false },
     run: async (a, p) => {
       const vaultId = String(a.vault_id);
       if (!vaultOwnedBy(vaultId, p!.handle)) {
@@ -946,6 +996,7 @@ export const MCP_TOOLS: ToolDef[] = [
       ["vault_id", "name"],
     ),
     write: true,
+    annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false },
     run: async (a, p) => {
       const vaultId = String(a.vault_id);
       if (!vaultOwnedBy(vaultId, p!.handle)) {
@@ -967,6 +1018,7 @@ export const MCP_TOOLS: ToolDef[] = [
       limit: { type: "number", description: "Max entries to return (default 20)" },
     }, ["owner"]),
     write: false,
+    annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
     run: (a) =>
       handleQueryHistory(a as Parameters<typeof handleQueryHistory>[0]),
   },
@@ -999,6 +1051,7 @@ export const MCP_TOOLS: ToolDef[] = [
       limit: { type: "number", description: "Maximum number of results (default 50, max 200)" },
     }),
     write: false,
+    annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
     run: (a) =>
       handleDataviewQuery(a as Parameters<typeof handleDataviewQuery>[0]),
   },
@@ -1013,6 +1066,7 @@ export const MCP_TOOLS: ToolDef[] = [
       scope: str("Optional scope filter. Omit for the commons graph. Use 'vault:<id>' for vault-scoped."),
     }),
     write: false,
+    annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
     run: (a) =>
       handleWikiGraph(a as Parameters<typeof handleWikiGraph>[0]),
   },
@@ -1027,6 +1081,7 @@ export const MCP_TOOLS: ToolDef[] = [
       limit: { type: "number", description: "Max events to return (default 20)" },
     }),
     write: false,
+    annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
     run: (a) =>
       handleActivityTrail(a as Parameters<typeof handleActivityTrail>[0]),
   },
@@ -1040,6 +1095,7 @@ export const MCP_TOOLS: ToolDef[] = [
       limit: { type: "number", description: "Max entries to return (default 50)" },
     }),
     write: false,
+    annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
     run: (a) =>
       handleIngestHistory(a as Parameters<typeof handleIngestHistory>[0]),
   },
@@ -1052,6 +1108,7 @@ export const MCP_TOOLS: ToolDef[] = [
       "Useful for assessing contributor reliability before accepting, reverting, or escalating edits.",
     inputSchema: schema({}),
     write: false,
+    annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
     run: () => handleListContributors(),
   },
   {
@@ -1062,6 +1119,7 @@ export const MCP_TOOLS: ToolDef[] = [
       "Useful for checking a contributor's track record before acting on their edits.",
     inputSchema: schema({ handle: str("Contributor handle to look up") }, ["handle"]),
     write: false,
+    annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
     run: (a) =>
       handleGetContributor(a as Parameters<typeof handleGetContributor>[0]),
   },
@@ -1069,7 +1127,7 @@ export const MCP_TOOLS: ToolDef[] = [
 
 /** Public (transport-facing) tool descriptor for `tools/list`. */
 function toolDescriptor(t: ToolDef) {
-  return { name: t.name, description: t.description, inputSchema: t.inputSchema };
+  return { name: t.name, description: t.description, inputSchema: t.inputSchema, annotations: t.annotations };
 }
 
 /** Exposed for tests (the reingest→primarySlug filing contract). */
