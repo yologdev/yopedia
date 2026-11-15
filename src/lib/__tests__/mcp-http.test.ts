@@ -112,6 +112,111 @@ describe("dispatchMcp — tools/list", () => {
   });
 });
 
+describe("dispatchMcp — tools/list annotations", () => {
+  // Fetch the HTTP tools/list response once for the annotation tests.
+  async function getHttpTools() {
+    const res = await dispatchMcp({ id: 1, method: "tools/list" }, null);
+    return (res!.result as { tools: Array<{
+      name: string;
+      annotations?: {
+        readOnlyHint?: boolean;
+        destructiveHint?: boolean;
+        idempotentHint?: boolean;
+        openWorldHint?: boolean;
+      };
+    }> }).tools;
+  }
+
+  it("every tool in the HTTP response has an annotations object with all four hints", async () => {
+    const tools = await getHttpTools();
+    for (const t of tools) {
+      expect(t.annotations, `${t.name} missing annotations`).toBeDefined();
+      expect(typeof t.annotations!.readOnlyHint, `${t.name} missing readOnlyHint`).toBe("boolean");
+      expect(typeof t.annotations!.destructiveHint, `${t.name} missing destructiveHint`).toBe("boolean");
+      expect(typeof t.annotations!.idempotentHint, `${t.name} missing idempotentHint`).toBe("boolean");
+      expect(typeof t.annotations!.openWorldHint, `${t.name} missing openWorldHint`).toBe("boolean");
+    }
+  });
+
+  it("annotations match the stdio server (parity check)", async () => {
+    // Import the stdio server and extract its tool annotations.
+    const { createMcpServer } = await import("../../mcp");
+    const server = createMcpServer();
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const stdioTools = (server as any)._registeredTools as Record<string, {
+      annotations?: {
+        readOnlyHint?: boolean;
+        destructiveHint?: boolean;
+        idempotentHint?: boolean;
+        openWorldHint?: boolean;
+      };
+    }>;
+
+    const httpTools = await getHttpTools();
+    for (const ht of httpTools) {
+      const st = stdioTools[ht.name];
+      expect(st, `stdio server has no tool named ${ht.name}`).toBeDefined();
+      expect(ht.annotations, `HTTP ${ht.name} annotations`).toEqual(st.annotations);
+    }
+  });
+
+  it("read-only tools have readOnlyHint: true and idempotentHint: true", async () => {
+    const tools = await getHttpTools();
+    const readOnlyNames = [
+      "search_wiki", "read_page", "list_pages", "query_wiki", "agent_context",
+      "list_agents", "lint_wiki", "list_discussions", "read_discussion",
+      "dataview_query", "list_revisions", "read_revision", "list_contributors",
+      "get_contributor", "query_history", "wiki_graph", "list_vaults",
+      "vault_pages", "maintenance_scan", "activity_trail", "ingest_history",
+    ];
+    for (const name of readOnlyNames) {
+      const t = tools.find((x) => x.name === name);
+      expect(t, `${name} not found in tools/list`).toBeDefined();
+      expect(t!.annotations!.readOnlyHint, `${name} readOnlyHint`).toBe(true);
+      expect(t!.annotations!.idempotentHint, `${name} idempotentHint`).toBe(true);
+    }
+  });
+
+  it("destructive tools have destructiveHint: true", async () => {
+    const tools = await getHttpTools();
+    const destructiveNames = ["delete_page", "delete_agent", "vault_delete", "merge_pages"];
+    for (const name of destructiveNames) {
+      const t = tools.find((x) => x.name === name);
+      expect(t, `${name} not found in tools/list`).toBeDefined();
+      expect(t!.annotations!.destructiveHint, `${name} destructiveHint`).toBe(true);
+    }
+  });
+
+  it("non-destructive write tools have destructiveHint: false", async () => {
+    const tools = await getHttpTools();
+    const nonDestructiveWriteNames = [
+      "create_page", "update_page", "ingest_url", "batch_ingest_urls",
+      "ingest_text", "ingest_pdf", "save_query_answer", "seed_agent",
+      "update_agent", "fix_lint_issue", "create_discussion",
+      "resolve_discussion", "add_comment", "reconcile_page", "reingest",
+      "revert_revision",
+    ];
+    for (const name of nonDestructiveWriteNames) {
+      const t = tools.find((x) => x.name === name);
+      expect(t, `${name} not found in tools/list`).toBeDefined();
+      expect(t!.annotations!.destructiveHint, `${name} destructiveHint`).toBe(false);
+    }
+  });
+
+  it("seed_agent is idempotent (create-or-update)", async () => {
+    const tools = await getHttpTools();
+    const t = tools.find((x) => x.name === "seed_agent");
+    expect(t!.annotations!.idempotentHint).toBe(true);
+    expect(t!.annotations!.readOnlyHint).toBe(false);
+  });
+
+  it("ingest_url has openWorldHint: true (fetches external URLs)", async () => {
+    const tools = await getHttpTools();
+    const t = tools.find((x) => x.name === "ingest_url");
+    expect(t!.annotations!.openWorldHint).toBe(true);
+  });
+});
+
 describe("dispatchMcp — tools/call auth gating", () => {
   it("rejects an unknown tool as an isError result (not a crash)", async () => {
     const res = await dispatchMcp(
