@@ -10,6 +10,7 @@ import {
 } from "@/lib/wiki";
 import { extractSummary } from "@/lib/ingest";
 import { getPrincipal, getServicePrincipal } from "@/lib/auth";
+import { enforceRateLimit } from "@/lib/rate-limit";
 import { getErrorMessage } from "@/lib/errors";
 
 /**
@@ -54,6 +55,15 @@ export async function POST(req: Request) {
     const principal = (await getPrincipal()) ?? getServicePrincipal(req);
     if (!principal) {
       return NextResponse.json({ error: "Sign in required." }, { status: 401 });
+    }
+
+    // Cost guard — wiki writes mutate storage and rebuild indexes.
+    const rl = await enforceRateLimit("wiki", principal.id);
+    if (!rl.allowed) {
+      return NextResponse.json(
+        { error: "Rate limit exceeded. Please wait before making more wiki changes." },
+        { status: 429 },
+      );
     }
 
     let body: unknown;

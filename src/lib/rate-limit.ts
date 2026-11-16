@@ -31,6 +31,8 @@ export const RATE_LIMITS = {
   query: { limit: 30, windowSec: 60 } as RateLimitRule,
   /** Ingest: each call triggers LLM synthesis + embedding. */
   ingest: { limit: 10, windowSec: 60 } as RateLimitRule,
+  /** Wiki writes (create / update / delete / publish): no LLM but mutate storage + indexes. */
+  wiki: { limit: 30, windowSec: 60 } as RateLimitRule,
 };
 
 /** The KV-backed store, or null outside an OpenNext Cloudflare request. */

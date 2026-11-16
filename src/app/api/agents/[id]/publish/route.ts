@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { verifyAgentToken, getAgent } from "@/lib/agents";
 import { getServicePrincipal } from "@/lib/auth";
 import { publishToCommons, PublishError } from "@/lib/publish";
+import { enforceRateLimit } from "@/lib/rate-limit";
 import { logger } from "@/lib/logger";
 
 interface RouteParams {
@@ -64,6 +65,15 @@ export async function POST(req: Request, { params }: RouteParams) {
       }
     } else {
       return NextResponse.json({ error: "Invalid token." }, { status: 401 });
+    }
+
+    // Cost guard — publish mutates storage and rebuilds indexes; key by agent id.
+    const rl = await enforceRateLimit("wiki", id);
+    if (!rl.allowed) {
+      return NextResponse.json(
+        { error: "Rate limit exceeded. Please wait before publishing again." },
+        { status: 429 },
+      );
     }
 
     // --- Body parsing ---
