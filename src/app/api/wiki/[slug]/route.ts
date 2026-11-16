@@ -10,6 +10,7 @@ import {
 import { extractSummary } from "@/lib/ingest";
 import { getPrincipal, getServicePrincipal } from "@/lib/auth";
 import { canReadFrontmatter, canWriteFrontmatter } from "@/lib/authz";
+import { enforceRateLimit } from "@/lib/rate-limit";
 import { getErrorMessage } from "@/lib/errors";
 import { patchMetadata } from "@/lib/patch-metadata";
 
@@ -26,6 +27,18 @@ export async function DELETE(
     // collectively manageable. (The middleware already blocks unauthenticated
     // mutations; this is the per-page check on top.)
     const principal = (await getPrincipal()) ?? getServicePrincipal(req);
+
+    // Cost guard — wiki writes mutate storage and rebuild indexes.
+    if (principal) {
+      const rl = await enforceRateLimit("wiki", principal.id);
+      if (!rl.allowed) {
+        return NextResponse.json(
+          { error: "Rate limit exceeded. Please wait before making more wiki changes." },
+          { status: 429 },
+        );
+      }
+    }
+
     const existing = await readWikiPageWithFrontmatter(slug);
     if (!existing) {
       return NextResponse.json(
@@ -109,6 +122,17 @@ export async function PUT(
     // Attribution comes from the authenticated session, never the body.
     const principal = (await getPrincipal()) ?? getServicePrincipal(req);
     const authorStr = principal?.handle;
+
+    // Cost guard — wiki writes mutate storage and rebuild indexes.
+    if (principal) {
+      const rl = await enforceRateLimit("wiki", principal.id);
+      if (!rl.allowed) {
+        return NextResponse.json(
+          { error: "Rate limit exceeded. Please wait before making more wiki changes." },
+          { status: 429 },
+        );
+      }
+    }
 
     const existing = await readWikiPageWithFrontmatter(slug);
     if (!existing) {
@@ -238,6 +262,17 @@ export async function PATCH(
 
     // Attribution comes from the authenticated session, never the body.
     const principal = (await getPrincipal()) ?? getServicePrincipal(req);
+
+    // Cost guard — wiki writes mutate storage and rebuild indexes.
+    if (principal) {
+      const rl = await enforceRateLimit("wiki", principal.id);
+      if (!rl.allowed) {
+        return NextResponse.json(
+          { error: "Rate limit exceeded. Please wait before making more wiki changes." },
+          { status: 429 },
+        );
+      }
+    }
 
     const result = await patchMetadata({
       slug,

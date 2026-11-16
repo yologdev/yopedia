@@ -65,6 +65,12 @@ describe("RATE_LIMITS surface entries", () => {
     expect(RATE_LIMITS.ingest.windowSec).toBe(60);
   });
 
+  it("has a wiki entry with sensible defaults", () => {
+    expect(RATE_LIMITS.wiki).toBeDefined();
+    expect(RATE_LIMITS.wiki.limit).toBe(30);
+    expect(RATE_LIMITS.wiki.windowSec).toBe(60);
+  });
+
   it("preserves the existing mcp entry unchanged", () => {
     expect(RATE_LIMITS.mcp).toBeDefined();
     expect(RATE_LIMITS.mcp.limit).toBe(60);
@@ -100,6 +106,32 @@ describe("checkRateLimit with ingest surface limits", () => {
   });
 });
 
+describe("checkRateLimit with wiki surface limits", () => {
+  it("blocks after 30 requests in the wiki window", async () => {
+    const store = new FakeStore();
+    const now = 5_000_000;
+    for (let i = 0; i < RATE_LIMITS.wiki.limit; i++) {
+      const r = await checkRateLimit(store, "wiki:user1", RATE_LIMITS.wiki, now);
+      expect(r.allowed).toBe(true);
+    }
+    const blocked = await checkRateLimit(store, "wiki:user1", RATE_LIMITS.wiki, now);
+    expect(blocked.allowed).toBe(false);
+    expect(blocked.remaining).toBe(0);
+  });
+
+  it("keys wiki limits independently per principal", async () => {
+    const store = new FakeStore();
+    const now = 5_500_000;
+    // Exhaust user1's wiki budget.
+    for (let i = 0; i < RATE_LIMITS.wiki.limit; i++) {
+      await checkRateLimit(store, "wiki:user1", RATE_LIMITS.wiki, now);
+    }
+    expect((await checkRateLimit(store, "wiki:user1", RATE_LIMITS.wiki, now)).allowed).toBe(false);
+    // user2 still has their full budget.
+    expect((await checkRateLimit(store, "wiki:user2", RATE_LIMITS.wiki, now)).allowed).toBe(true);
+  });
+});
+
 describe("enforceRateLimit (fail-open)", () => {
   it("allows when there's no KV store (local/test/outage)", async () => {
     // No OpenNext Cloudflare context here → getStore() is null → fail-open.
@@ -115,6 +147,12 @@ describe("enforceRateLimit (fail-open)", () => {
 
   it("fails open for the ingest surface without KV", async () => {
     const r = await enforceRateLimit("ingest", "anykey");
+    expect(r.allowed).toBe(true);
+    expect(r.remaining).toBe(-1);
+  });
+
+  it("fails open for the wiki surface without KV", async () => {
+    const r = await enforceRateLimit("wiki", "anykey");
     expect(r.allowed).toBe(true);
     expect(r.remaining).toBe(-1);
   });
