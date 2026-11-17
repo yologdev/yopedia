@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { getPrincipal } from "@/lib/auth";
 import { listVaults, createVault, vaultsContaining } from "@/lib/vault";
 import { canSetPrivate } from "@/lib/authz";
+import { enforceRateLimit } from "@/lib/rate-limit";
 import type { VaultVisibility } from "@/lib/vault";
 
 /**
@@ -36,6 +37,16 @@ export async function POST(req: Request) {
   if (!principal) {
     return NextResponse.json({ error: "Sign in required." }, { status: 401 });
   }
+
+  // Cost guard — vault writes mutate storage.
+  const rl = await enforceRateLimit("wiki", principal.id);
+  if (!rl.allowed) {
+    return NextResponse.json(
+      { error: "Rate limit exceeded. Please wait before making more changes." },
+      { status: 429 },
+    );
+  }
+
   let name: unknown;
   let visibility: unknown;
   try {

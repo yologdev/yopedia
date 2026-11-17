@@ -76,6 +76,12 @@ describe("RATE_LIMITS surface entries", () => {
     expect(RATE_LIMITS.mcp.limit).toBe(60);
     expect(RATE_LIMITS.mcp.windowSec).toBe(60);
   });
+
+  it("has a reconcile entry with tighter limits than wiki", () => {
+    expect(RATE_LIMITS.reconcile).toBeDefined();
+    expect(RATE_LIMITS.reconcile.limit).toBe(10);
+    expect(RATE_LIMITS.reconcile.windowSec).toBe(60);
+  });
 });
 
 describe("checkRateLimit with query surface limits", () => {
@@ -132,6 +138,20 @@ describe("checkRateLimit with wiki surface limits", () => {
   });
 });
 
+describe("checkRateLimit with reconcile surface limits", () => {
+  it("blocks after 10 requests in the reconcile window", async () => {
+    const store = new FakeStore();
+    const now = 6_000_000;
+    for (let i = 0; i < RATE_LIMITS.reconcile.limit; i++) {
+      const r = await checkRateLimit(store, "reconcile:user1", RATE_LIMITS.reconcile, now);
+      expect(r.allowed).toBe(true);
+    }
+    const blocked = await checkRateLimit(store, "reconcile:user1", RATE_LIMITS.reconcile, now);
+    expect(blocked.allowed).toBe(false);
+    expect(blocked.remaining).toBe(0);
+  });
+});
+
 describe("enforceRateLimit (fail-open)", () => {
   it("allows when there's no KV store (local/test/outage)", async () => {
     // No OpenNext Cloudflare context here → getStore() is null → fail-open.
@@ -153,6 +173,12 @@ describe("enforceRateLimit (fail-open)", () => {
 
   it("fails open for the wiki surface without KV", async () => {
     const r = await enforceRateLimit("wiki", "anykey");
+    expect(r.allowed).toBe(true);
+    expect(r.remaining).toBe(-1);
+  });
+
+  it("fails open for the reconcile surface without KV", async () => {
+    const r = await enforceRateLimit("reconcile", "anykey");
     expect(r.allowed).toBe(true);
     expect(r.remaining).toBe(-1);
   });

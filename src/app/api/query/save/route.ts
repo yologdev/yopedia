@@ -2,11 +2,26 @@ import { NextRequest, NextResponse } from "next/server";
 import { saveAnswerToWiki } from "@/lib/query";
 import { getPrincipal } from "@/lib/auth";
 import { commonsPath, pagePath, ownerToTenant } from "@/lib/links";
+import { enforceRateLimit } from "@/lib/rate-limit";
 import { getErrorMessage } from "@/lib/errors";
 import { logger } from "@/lib/logger";
 
 export async function POST(request: NextRequest) {
   try {
+    // Resolve principal once — reused for rate limiting and artifact ownership.
+    const principal = await getPrincipal();
+
+    // Cost guard — saves mutate storage + rebuild indexes.
+    if (principal) {
+      const rl = await enforceRateLimit("wiki", principal.id);
+      if (!rl.allowed) {
+        return NextResponse.json(
+          { error: "Rate limit exceeded. Please wait before saving again." },
+          { status: 429 },
+        );
+      }
+    }
+
     const body = await request.json();
 
     const { title, content, sources, format } = body;
@@ -53,7 +68,6 @@ export async function POST(request: NextRequest) {
     const isArtifact = format === "html" || format === "slides";
     let owner: string | undefined;
     if (isArtifact) {
-      const principal = await getPrincipal();
       if (!principal) {
         logger.error("query", "Artifact save: could not resolve principal despite write-gate");
         return NextResponse.json(
