@@ -3,6 +3,7 @@ import { decodeSlug } from "@/lib/slugify";
 import { getThread, addComment } from "@/lib/talk";
 import { getPrincipal } from "@/lib/auth";
 import { canReadSlug } from "@/lib/authz";
+import { enforceRateLimit } from "@/lib/rate-limit";
 import { enqueueTask } from "@/lib/tasks";
 import { agentIdFor, DEFAULT_AGENT_NAME } from "@/lib/agents";
 import { getErrorMessage } from "@/lib/errors";
@@ -35,6 +36,16 @@ export async function POST(_req: Request, { params }: RouteParams) {
     if (!principal) {
       return NextResponse.json({ error: "Sign in required." }, { status: 401 });
     }
+
+    // Cost guard — each ask-yoyo enqueues an LLM reconcile task.
+    const rl = await enforceRateLimit("reconcile", principal.id);
+    if (!rl.allowed) {
+      return NextResponse.json(
+        { error: "Rate limit exceeded. Please wait before asking yoyo again." },
+        { status: 429 },
+      );
+    }
+
     // Realm-aware read ACL: cloak a private page's discussions as 404.
     if (!(await canReadSlug(slug, principal))) {
       return NextResponse.json({ error: "not found" }, { status: 404 });

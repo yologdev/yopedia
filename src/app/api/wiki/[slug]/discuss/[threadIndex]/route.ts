@@ -3,6 +3,7 @@ import { decodeSlug } from "@/lib/slugify";
 import { getThread, resolveThread } from "@/lib/talk";
 import { getPrincipal, getServicePrincipal } from "@/lib/auth";
 import { canReadSlug } from "@/lib/authz";
+import { enforceRateLimit } from "@/lib/rate-limit";
 import { getErrorMessage } from "@/lib/errors";
 import { logger } from "@/lib/logger";
 
@@ -64,6 +65,18 @@ export async function PATCH(req: Request, { params }: RouteParams) {
 
     // Resolve principal — prefer Clerk session, fall back to service token.
     const principal = (await getPrincipal()) ?? getServicePrincipal(req);
+
+    // Cost guard — discussion writes mutate storage. Service principals are
+    // rate-limited too (they share the same wiki surface budget).
+    if (principal) {
+      const rl = await enforceRateLimit("wiki", principal.id);
+      if (!rl.allowed) {
+        return NextResponse.json(
+          { error: "Rate limit exceeded. Please wait before making more changes." },
+          { status: 429 },
+        );
+      }
+    }
 
     // Realm-aware read ACL: a private page's discussions are invisible to
     // non-owners (cloaked as 404 — no existence oracle).

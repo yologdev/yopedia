@@ -3,6 +3,7 @@ import { decodeSlug } from "@/lib/slugify";
 import { addComment } from "@/lib/talk";
 import { getPrincipal } from "@/lib/auth";
 import { canReadSlug } from "@/lib/authz";
+import { enforceRateLimit } from "@/lib/rate-limit";
 import { getErrorMessage } from "@/lib/errors";
 import { logger } from "@/lib/logger";
 
@@ -31,6 +32,15 @@ export async function POST(req: Request, { params }: RouteParams) {
     const principal = await getPrincipal();
     if (!principal) {
       return NextResponse.json({ error: "Sign in required." }, { status: 401 });
+    }
+
+    // Cost guard — discussion writes mutate storage.
+    const rl = await enforceRateLimit("wiki", principal.id);
+    if (!rl.allowed) {
+      return NextResponse.json(
+        { error: "Rate limit exceeded. Please wait before making more changes." },
+        { status: 429 },
+      );
     }
 
     // Realm-aware read ACL: a private page's discussions are invisible to

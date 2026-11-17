@@ -33,6 +33,8 @@ export const RATE_LIMITS = {
   ingest: { limit: 10, windowSec: 60 } as RateLimitRule,
   /** Wiki writes (create / update / delete / publish): no LLM but mutate storage + indexes. */
   wiki: { limit: 30, windowSec: 60 } as RateLimitRule,
+  /** Reconcile (ask-yoyo): enqueues an LLM task — tighter than wiki writes. */
+  reconcile: { limit: 10, windowSec: 60 } as RateLimitRule,
 };
 
 /** The KV-backed store, or null outside an OpenNext Cloudflare request. */

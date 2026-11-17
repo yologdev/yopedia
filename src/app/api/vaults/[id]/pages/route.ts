@@ -3,6 +3,7 @@ import { getPrincipal } from "@/lib/auth";
 import { addToVault, removeFromVault, vaultOwnedBy, getVault } from "@/lib/vault";
 import { readWikiPageWithFrontmatter } from "@/lib/wiki";
 import { isVaultEligible } from "@/lib/commons";
+import { enforceRateLimit } from "@/lib/rate-limit";
 
 interface Params {
   params: Promise<{ id: string }>;
@@ -99,6 +100,16 @@ export async function POST(req: Request, { params }: Params) {
   const { id } = await params;
   const auth = await authorizeOwner(id);
   if (auth.error) return auth.error;
+
+  // Cost guard — vault writes mutate storage.
+  const rl = await enforceRateLimit("wiki", auth.principal!.id);
+  if (!rl.allowed) {
+    return NextResponse.json(
+      { error: "Rate limit exceeded. Please wait before making more changes." },
+      { status: 429 },
+    );
+  }
+
   if (!(await getVault(id))) {
     return NextResponse.json({ error: "Vault not found." }, { status: 404 });
   }
@@ -135,6 +146,16 @@ export async function DELETE(req: Request, { params }: Params) {
   const { id } = await params;
   const auth = await authorizeOwner(id);
   if (auth.error) return auth.error;
+
+  // Cost guard — vault writes mutate storage.
+  const rl = await enforceRateLimit("wiki", auth.principal!.id);
+  if (!rl.allowed) {
+    return NextResponse.json(
+      { error: "Rate limit exceeded. Please wait before making more changes." },
+      { status: 429 },
+    );
+  }
+
   const slug = await readSlug(req);
   if (!slug) {
     return NextResponse.json({ error: "Missing or invalid 'slug'." }, { status: 400 });

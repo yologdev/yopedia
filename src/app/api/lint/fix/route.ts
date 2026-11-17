@@ -7,6 +7,7 @@ import {
 import { getErrorMessage } from "@/lib/errors";
 import { getPrincipal } from "@/lib/auth";
 import { isOwnerHandle } from "@/lib/owner";
+import { enforceRateLimit } from "@/lib/rate-limit";
 import { logger } from "@/lib/logger";
 
 /**
@@ -34,6 +35,15 @@ export async function POST(req: NextRequest) {
     const principal = await getPrincipal();
     if (!isOwnerHandle(principal?.handle)) {
       return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+    }
+
+    // Cost guard — lint fixes mutate pages.
+    const rl = await enforceRateLimit("wiki", principal!.id);
+    if (!rl.allowed) {
+      return NextResponse.json(
+        { error: "Rate limit exceeded. Please wait before fixing more issues." },
+        { status: 429 },
+      );
     }
 
     const body = await req.json();
