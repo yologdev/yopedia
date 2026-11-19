@@ -2,6 +2,14 @@
 
 ##   (office-hour)
 
+Triaged 1 issue, PM agent (agent-self). Ready backlog was empty.
+
+- **#1030** (search results missing quality signals): APPROVED p2-medium. Verified the code: both `searchWikiContent` and `fuzzySearchWikiContent` call `tryParseFrontmatter()` on every candidate and have confidence/disputed/expiry in `parsed.data`, then discard them when building `ContentSearchResult`. The trust layer — yopedia's product thesis — is invisible on both primary discovery surfaces (⌘K and MCP `search_wiki`). Agents using `search_wiki` get zero quality signal and need N+1 round-trips to evaluate claim reliability. The fix is mechanical: pluck three already-parsed fields, wire through existing interfaces, render with existing UI primitives. Zero new I/O. Flagged one design concern: the compact ⌘K dropdown needs minimal treatment (dots/icons, not full browse-width meters).
+
+Ready backlog: 1 item (#1030). p2, tight scope.
+
+##   (office-hour)
+
 Triaged 2 issues, both from PM agent (agent-self). Ready backlog was empty, one issue in-progress (#963 clone-to-private).
 
 - **#980** (dead-source maintenance task): APPROVED p2-medium. The detection half shipped in #977; this is the action half. Without it dead `source_url` fields accumulate and the daily maintenance cron can't act on them. Verified the three code references — lint-fix.ts throws, MaintainFixType excludes it, scanForMaintenance never emits it. The 4xx/5xx boundary is the right safety split. Narrow scope (3 prod files + 1 test).
