@@ -11,6 +11,12 @@ export interface SearchNode {
   snippet?: string;
   /** True when this result came from fuzzy matching */
   fuzzy?: boolean;
+  /** Page confidence score (0–1), when present */
+  confidence?: number;
+  /** True when the page is marked as disputed */
+  disputed?: boolean;
+  /** ISO date string for page expiry/review-by, when present */
+  expiry?: string;
 }
 
 const MAX_RESULTS = 8;
@@ -94,11 +100,14 @@ export function useGlobalSearch(): UseGlobalSearchReturn {
         if (Array.isArray(data.results)) {
           setContentResults(
             data.results.map(
-              (r: { slug: string; title: string; snippet: string; fuzzy?: boolean }) => ({
+              (r: { slug: string; title: string; snippet: string; fuzzy?: boolean; confidence?: number; disputed?: boolean; expiry?: string }) => ({
                 id: r.slug,
                 label: r.title,
                 snippet: r.snippet,
                 fuzzy: r.fuzzy,
+                ...(r.confidence !== undefined ? { confidence: r.confidence } : {}),
+                ...(r.disputed ? { disputed: true } : {}),
+                ...(r.expiry ? { expiry: r.expiry } : {}),
               }),
             ),
           );

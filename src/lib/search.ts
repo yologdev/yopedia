@@ -322,6 +322,24 @@ export interface ContentSearchResult {
   score: number;
   /** True when this result came from fuzzy (typo-tolerant) matching */
   fuzzy?: boolean;
+  /** Page confidence score (0–1) from frontmatter, when present */
+  confidence?: number;
+  /** True when the page is marked as disputed in frontmatter */
+  disputed?: boolean;
+  /** ISO date string for page expiry/review-by, when present */
+  expiry?: string;
+}
+
+/** Extract optional quality-signal fields from already-parsed frontmatter. */
+function qualityFields(
+  fm: Record<string, unknown>,
+): Pick<ContentSearchResult, "confidence" | "disputed" | "expiry"> {
+  const out: Pick<ContentSearchResult, "confidence" | "disputed" | "expiry"> =
+    {};
+  if (typeof fm.confidence === "number") out.confidence = fm.confidence;
+  if (fm.disputed === true) out.disputed = true;
+  if (typeof fm.expiry === "string") out.expiry = fm.expiry;
+  return out;
 }
 
 /** Strip a leading markdown heading marker (`#`/`>`/list bullets) from a line. */
@@ -638,7 +656,7 @@ export async function searchWikiContent(
     const snippet =
       bodyMatchIndex !== -1 ? contextSnippet(body, bodyMatchIndex) : summary;
 
-    scored.push({ slug, title, summary, snippet, score });
+    scored.push({ slug, title, summary, snippet, score, ...qualityFields(parsed.data) });
   }
 
   // Sort by BM25 score descending, then alphabetically by title
@@ -686,7 +704,7 @@ export async function searchWikiContent(
           .split("\n")
           .find((l) => l.trim().length > 0);
         const summary = summaryLine ? truncateAtWord(summaryLine, 120) : "";
-        merged.push({ slug, title, summary, snippet: summary, score });
+        merged.push({ slug, title, summary, snippet: summary, score, ...qualityFields(parsed.data) });
       }
     }
     return merged.slice(0, maxResults);
@@ -811,7 +829,7 @@ export async function fuzzySearchWikiContent(
     }
     const score = terms.length > 0 ? totalSim / terms.length : 0;
 
-    fuzzyResults.push({ slug, title, summary, snippet, score, fuzzy: true });
+    fuzzyResults.push({ slug, title, summary, snippet, score, fuzzy: true, ...qualityFields(parsed.data) });
   }
 
   // Sort fuzzy results by edit-distance quality score descending, then by title
