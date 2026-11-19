@@ -608,6 +608,64 @@ describe("searchWikiContent", () => {
 });
 
 // ---------------------------------------------------------------------------
+// Quality fields (confidence, disputed, expiry) in search results
+// ---------------------------------------------------------------------------
+
+describe("searchWikiContent quality fields", () => {
+  it("returns confidence, disputed, and expiry from frontmatter", async () => {
+    await ensureDirectories();
+    // Page with all three quality fields
+    const fmAll = serializeFrontmatter({
+      title: "Quality Page",
+      confidence: 0.85,
+      disputed: true,
+      expiry: "2030-06-15",
+    });
+    await writeWikiPage("quality-page", fmAll + "\n# Quality Page\n\nSome quality content about testing.");
+    // Page with no quality fields
+    await writeWikiPage("plain-page", "# Plain Page\n\nSome plain content about testing.");
+    await updateIndex([
+      { title: "Quality Page", slug: "quality-page", summary: "Quality test." },
+      { title: "Plain Page", slug: "plain-page", summary: "Plain test." },
+    ]);
+
+    const results = await searchWikiContent("testing", 10);
+    expect(results.length).toBe(2);
+
+    const quality = results.find((r) => r.slug === "quality-page");
+    const plain = results.find((r) => r.slug === "plain-page");
+
+    expect(quality).toBeDefined();
+    expect(quality!.confidence).toBe(0.85);
+    expect(quality!.disputed).toBe(true);
+    expect(quality!.expiry).toBe("2030-06-15");
+
+    expect(plain).toBeDefined();
+    expect(plain!.confidence).toBeUndefined();
+    expect(plain!.disputed).toBeUndefined();
+    expect(plain!.expiry).toBeUndefined();
+  });
+
+  it("returns confidence without disputed/expiry when only confidence is set", async () => {
+    await ensureDirectories();
+    const fm = serializeFrontmatter({
+      title: "Confident Page",
+      confidence: 0.42,
+    });
+    await writeWikiPage("confident-page", fm + "\n# Confident Page\n\nContent about neurons.");
+    await updateIndex([
+      { title: "Confident Page", slug: "confident-page", summary: "Confident test." },
+    ]);
+
+    const results = await searchWikiContent("neurons", 10);
+    expect(results.length).toBe(1);
+    expect(results[0].confidence).toBe(0.42);
+    expect(results[0].disputed).toBeUndefined();
+    expect(results[0].expiry).toBeUndefined();
+  });
+});
+
+// ---------------------------------------------------------------------------
 // findBacklinks
 // ---------------------------------------------------------------------------
 
@@ -1214,6 +1272,34 @@ describe("fuzzySearchWikiContent", () => {
         expect(closeResult.score).toBeGreaterThan(farResult.score);
       }
     }
+  });
+});
+
+// ---------------------------------------------------------------------------
+// fuzzySearchWikiContent quality fields
+// ---------------------------------------------------------------------------
+
+describe("fuzzySearchWikiContent quality fields", () => {
+  it("returns quality fields from both exact and fuzzy results", async () => {
+    await ensureDirectories();
+    const fm = serializeFrontmatter({
+      title: "Disputed Topic",
+      confidence: 0.3,
+      disputed: true,
+      expiry: "2025-01-01",
+    });
+    await writeWikiPage("disputed-topic", fm + "\n# Disputed Topic\n\nThis is about transformers architecture.");
+    await updateIndex([
+      { title: "Disputed Topic", slug: "disputed-topic", summary: "Disputed test." },
+    ]);
+
+    const results = await fuzzySearchWikiContent("transformers", 10);
+    expect(results.length).toBeGreaterThanOrEqual(1);
+    const hit = results.find((r) => r.slug === "disputed-topic");
+    expect(hit).toBeDefined();
+    expect(hit!.confidence).toBe(0.3);
+    expect(hit!.disputed).toBe(true);
+    expect(hit!.expiry).toBe("2025-01-01");
   });
 });
 

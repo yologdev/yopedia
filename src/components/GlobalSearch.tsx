@@ -97,6 +97,9 @@ export function GlobalSearch() {
                   label={page.label}
                   snippet={page.snippet}
                   fuzzy={page.fuzzy}
+                  confidence={page.confidence}
+                  disputed={page.disputed}
+                  expiry={page.expiry}
                   highlighted={i === highlighted}
                   onMouseEnter={() => setHighlighted(i)}
                   onMouseDown={(e) => {

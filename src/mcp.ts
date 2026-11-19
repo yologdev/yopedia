@@ -113,7 +113,7 @@ export async function handleSearchWiki(args: {
   query: string;
   limit?: number | undefined;
   scope?: string | undefined;
-}): Promise<{ slug: string; title: string; summary: string; snippet: string; score: number; fuzzy?: boolean }[]> {
+}): Promise<{ slug: string; title: string; summary: string; snippet: string; score: number; fuzzy?: boolean; confidence?: number; disputed?: boolean; expiry?: string }[]> {
   const limit = args.limit ?? 10;
   const scope = args.scope ? await resolveScope(args.scope) : undefined;
   const results: ContentSearchResult[] = await fuzzySearchWikiContent(
@@ -129,6 +129,9 @@ export async function handleSearchWiki(args: {
     snippet: r.snippet,
     score: r.score,
     ...(r.fuzzy ? { fuzzy: true } : {}),
+    ...(r.confidence !== undefined ? { confidence: r.confidence } : {}),
+    ...(r.disputed ? { disputed: true } : {}),
+    ...(r.expiry ? { expiry: r.expiry } : {}),
   }));
 }
 

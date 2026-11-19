@@ -1,9 +1,14 @@
+import { Confidence, Freshness } from "./folio/primitives";
+
 interface SearchResultItemProps {
   id: string;
   index: number;
   label: string;
   snippet?: string;
   fuzzy?: boolean;
+  confidence?: number;
+  disputed?: boolean;
+  expiry?: string;
   highlighted: boolean;
   onMouseEnter: () => void;
   onMouseDown: (e: React.MouseEvent) => void;
@@ -14,6 +19,9 @@ export function SearchResultItem({
   label,
   snippet,
   fuzzy,
+  confidence,
+  disputed,
+  expiry,
   highlighted,
   onMouseEnter,
   onMouseDown,
@@ -33,6 +41,16 @@ export function SearchResultItem({
     >
       <div className="flex items-center gap-1.5">
         <span>{label}</span>
+        {confidence !== undefined && <Confidence value={confidence} />}
+        {disputed && (
+          <span
+            className="text-[10px] font-medium whitespace-nowrap"
+            style={{ color: "var(--rust, #b44)" }}
+          >
+            disputed
+          </span>
+        )}
+        {expiry && <Freshness expiry={expiry} />}
         {fuzzy && (
           <span className="text-[10px] text-foreground/30 italic whitespace-nowrap">
             (fuzzy match)
