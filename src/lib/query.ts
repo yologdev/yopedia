@@ -292,7 +292,7 @@ export async function query(
     // Determine which pages to load
     const selectedSlugs = await selectPagesForQuery(question, entries, scopeSlugs);
 
-    const { context } = await buildContext(selectedSlugs);
+    const { context, sourceDetails } = await buildContext(selectedSlugs);
 
     // No API key — return a helpful fallback
     if (!hasLLMKey()) {
@@ -331,7 +331,11 @@ export async function query(
     const allSlugs = entries.map((e) => e.slug);
     const sources = extractCitedSlugs(answer, allSlugs);
 
-    return { answer, sources };
+    return {
+      answer,
+      sources,
+      ...(sourceDetails.length > 0 ? { sourceDetails } : {}),
+    };
   });
 }
 

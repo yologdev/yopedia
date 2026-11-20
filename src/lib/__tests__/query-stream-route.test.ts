@@ -63,7 +63,11 @@ vi.mock("@/lib/llm", () => ({
 
 vi.mock("@/lib/query", () => ({
   selectPagesForQuery: vi.fn(async () => ["concept-a"]),
-  buildContext: vi.fn(async () => ({ context: "ctx", slugs: ["concept-a"] })),
+  buildContext: vi.fn(async () => ({
+    context: "ctx",
+    slugs: ["concept-a"],
+    sourceDetails: [{ slug: "concept-a", confidence: 0.85 }],
+  })),
   buildQuerySystemPrompt: vi.fn(() => "system"),
 }));
 
@@ -232,5 +236,16 @@ describe("POST /api/query/stream — sentinel markers (#993)", () => {
     expect(header).toBeTruthy();
     const slugs = JSON.parse(decodeURIComponent(header!));
     expect(slugs).toEqual(["concept-a"]);
+  });
+
+  it("includes X-Wiki-Source-Details header with per-source quality metadata (#1033)", async () => {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    mockedCallLLMStream.mockReturnValue(makeMockStream(["ok"]) as any);
+
+    const res = await POST(makeRequest({ question: "what is A?" }));
+    const header = res.headers.get("X-Wiki-Source-Details");
+    expect(header).toBeTruthy();
+    const details = JSON.parse(decodeURIComponent(header!));
+    expect(details).toEqual([{ slug: "concept-a", confidence: 0.85 }]);
   });
 });

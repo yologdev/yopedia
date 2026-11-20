@@ -13,7 +13,7 @@ import { MAX_CONTEXT_PAGES, RRF_K, BM25_FULLBODY_MAX_PAGES } from "./constants";
 import { logger } from "./logger";
 import { parseSources } from "./sources";
 import { wrapUntrusted } from "./untrusted";
-import type { IndexEntry } from "./types";
+import type { IndexEntry, SourceDetail } from "./types";
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -273,9 +273,10 @@ export async function searchIndex(
 export async function buildContext(slugs?: string[]): Promise<{
   context: string;
   slugs: string[];
+  sourceDetails: SourceDetail[];
 }> {
   if (!slugs || slugs.length === 0) {
-    return { context: "", slugs: [] };
+    return { context: "", slugs: [], sourceDetails: [] };
   }
 
   const LOW_CONFIDENCE_THRESHOLD = 0.5;
@@ -301,8 +302,9 @@ export async function buildContext(slugs?: string[]): Promise<{
     }
   }
 
-  // Second pass: build context string with markers.
+  // Second pass: build context string with markers and collect structured metadata.
   const loadedSlugs: string[] = [];
+  const sourceDetails: SourceDetail[] = [];
   const parts: string[] = [];
 
   for (const page of loadedPages) {
@@ -336,6 +338,22 @@ export async function buildContext(slugs?: string[]): Promise<{
     if (!isNaN(sourceCount) && sourceCount > 0) {
       headerParts.push(`sources: ${sourceCount}`);
     }
+
+    // Collect structured per-page quality metadata for the response.
+    const detail: SourceDetail = { slug: page.slug };
+    if (typeof confidence === "number") {
+      detail.confidence = confidence;
+    }
+    if (page.frontmatter.disputed === true) {
+      detail.disputed = true;
+    }
+    if (typeof expiry === "string" && expiry) {
+      detail.expiry = expiry;
+    }
+    if (!isNaN(sourceCount) && sourceCount > 0) {
+      detail.sourceCount = sourceCount;
+    }
+    sourceDetails.push(detail);
 
     let header = `=== Page: ${page.title} (${headerParts.join(", ")}) ===`;
 
@@ -388,7 +406,7 @@ export async function buildContext(slugs?: string[]): Promise<{
     parts.push(`${header}\n${wrappedBody}`);
   }
 
-  return { context: parts.join("\n\n"), slugs: loadedSlugs };
+  return { context: parts.join("\n\n"), slugs: loadedSlugs, sourceDetails };
 }
 
 // ---------------------------------------------------------------------------
