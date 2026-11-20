@@ -66,6 +66,32 @@ describe("ingest-jobs", () => {
     expect(await getIngestJob("ghost")).toBeNull();
   });
 
+  it("persists chunksFailed and chunksTotal through update", async () => {
+    await createIngestJob({ jobId: "c1", url: "u", owner: "alice" });
+    const done = await updateIngestJob("c1", {
+      status: "done",
+      slug: "my-page",
+      chunksFailed: 2,
+      chunksTotal: 10,
+    });
+    expect(done).toMatchObject({
+      status: "done",
+      slug: "my-page",
+      chunksFailed: 2,
+      chunksTotal: 10,
+    });
+    const reread = await getIngestJob("c1");
+    expect(reread!.chunksFailed).toBe(2);
+    expect(reread!.chunksTotal).toBe(10);
+  });
+
+  it("omits chunk fields when not provided (backward compatible)", async () => {
+    await createIngestJob({ jobId: "c2", url: "u", owner: "alice" });
+    const done = await updateIngestJob("c2", { status: "done", slug: "p" });
+    expect(done!.chunksFailed).toBeUndefined();
+    expect(done!.chunksTotal).toBeUndefined();
+  });
+
   it("rejects a path-traversing job id", async () => {
     await expect(getIngestJob("../secrets")).rejects.toThrow(/invalid ingest job id/);
   });

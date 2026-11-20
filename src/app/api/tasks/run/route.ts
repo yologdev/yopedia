@@ -157,6 +157,7 @@ export async function POST(req: Request) {
       await updateIngestJob(task.jobId, {
         status: "done",
         slug: result.primarySlug,
+        ...(result.chunksFailed ? { chunksFailed: result.chunksFailed, chunksTotal: result.chunksTotal } : {}),
       });
     }
 

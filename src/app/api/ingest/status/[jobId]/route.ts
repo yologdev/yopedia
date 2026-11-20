@@ -64,6 +64,7 @@ export async function GET(
       error: eff.error ?? job.error,
       url: job.url,
       title: job.title,
+      ...(job.chunksFailed ? { chunksFailed: job.chunksFailed, chunksTotal: job.chunksTotal } : {}),
     });
   } catch (err) {
     logger.error("ingest", "ingest status error", err);
