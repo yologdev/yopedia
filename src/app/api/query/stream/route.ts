@@ -132,7 +132,7 @@ export async function POST(request: NextRequest) {
 
     // Select relevant pages and build context (same logic as query())
     const selectedSlugs = await selectPagesForQuery(trimmedQuestion, entries, scopeSlugs);
-    const { context, slugs: loadedSlugs } =
+    const { context, slugs: loadedSlugs, sourceDetails } =
       await buildContext(selectedSlugs);
 
     // Build the system prompt (same as non-streaming query)
@@ -178,6 +178,9 @@ export async function POST(request: NextRequest) {
         // header transport, which is Latin-1 on the wire. The client decodes
         // with decodeURIComponent before JSON.parse.
         "X-Wiki-Sources": encodeURIComponent(JSON.stringify(loadedSlugs)),
+        // Per-source quality metadata (confidence, disputed, expiry, sourceCount)
+        // so streaming consumers can evaluate trust without N+1 read_page calls.
+        "X-Wiki-Source-Details": encodeURIComponent(JSON.stringify(sourceDetails)),
       },
     });
   } catch (error) {

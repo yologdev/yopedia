@@ -64,10 +64,22 @@ export interface IngestResult {
   chunksTotal?: number;
 }
 
+/** Per-source quality metadata returned alongside query answers. */
+export interface SourceDetail {
+  slug: string;
+  confidence?: number;
+  disputed?: boolean;
+  expiry?: string;
+  sourceCount?: number;
+}
+
 /** Result from a query against the wiki. */
 export interface QueryResult {
   answer: string; // Markdown-formatted answer with citations
   sources: string[]; // slugs of wiki pages used as sources
+  /** Per-source quality metadata for the pages used as context.
+   *  Optional so existing consumers that only read `answer` + `sources` are unaffected. */
+  sourceDetails?: SourceDetail[];
 }
 
 /** A single issue found by the lint operation. */

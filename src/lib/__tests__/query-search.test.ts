@@ -493,8 +493,78 @@ describe("buildContext — disputed and supersedes annotations", () => {
 });
 
 // ---------------------------------------------------------------------------
-// searchIndex — respects pre-filtered entries from scope
+// buildContext — sourceDetails (#1033)
 // ---------------------------------------------------------------------------
+describe("buildContext — sourceDetails", () => {
+  it("returns sourceDetails matching page frontmatter", async () => {
+    await ensureDirectories();
+    await writeWikiPage(
+      "trusted-page",
+      "---\nconfidence: 0.9\nexpiry: 2030-01-01\nsource_count: 3\n---\n\n# Trusted\n\nContent.",
+    );
+    const { sourceDetails } = await buildContext(["trusted-page"]);
+    expect(sourceDetails).toHaveLength(1);
+    expect(sourceDetails[0]).toEqual({
+      slug: "trusted-page",
+      confidence: 0.9,
+      expiry: "2030-01-01",
+      sourceCount: 3,
+    });
+  });
+
+  it("includes disputed flag when page is disputed", async () => {
+    await ensureDirectories();
+    await writeWikiPage(
+      "disputed-page",
+      "---\nconfidence: 0.4\ndisputed: true\n---\n\n# Disputed\n\nContent.",
+    );
+    const { sourceDetails } = await buildContext(["disputed-page"]);
+    expect(sourceDetails).toHaveLength(1);
+    expect(sourceDetails[0]).toEqual({
+      slug: "disputed-page",
+      confidence: 0.4,
+      disputed: true,
+    });
+  });
+
+  it("omits optional fields when frontmatter is minimal", async () => {
+    await ensureDirectories();
+    await writeWikiPage(
+      "minimal-page",
+      "---\n---\n\n# Minimal\n\nContent.",
+    );
+    const { sourceDetails } = await buildContext(["minimal-page"]);
+    expect(sourceDetails).toHaveLength(1);
+    expect(sourceDetails[0]).toEqual({ slug: "minimal-page" });
+  });
+
+  it("returns empty sourceDetails for empty slugs", async () => {
+    const { sourceDetails } = await buildContext([]);
+    expect(sourceDetails).toEqual([]);
+  });
+
+  it("returns one detail per loaded page", async () => {
+    await ensureDirectories();
+    await writeWikiPage(
+      "page-a",
+      "---\nconfidence: 0.8\n---\n\n# A\n\nContent.",
+    );
+    await writeWikiPage(
+      "page-b",
+      "---\nconfidence: 0.6\nexpiry: 2025-12-31\ndisputed: true\nsource_count: 2\n---\n\n# B\n\nContent.",
+    );
+    const { sourceDetails } = await buildContext(["page-a", "page-b"]);
+    expect(sourceDetails).toHaveLength(2);
+    expect(sourceDetails[0]).toEqual({ slug: "page-a", confidence: 0.8 });
+    expect(sourceDetails[1]).toEqual({
+      slug: "page-b",
+      confidence: 0.6,
+      expiry: "2025-12-31",
+      disputed: true,
+      sourceCount: 2,
+    });
+  });
+});
 describe("searchIndex — pre-filtered entries", () => {
   it("returns empty array for empty entries", async () => {
     const result = await searchIndex("neural networks", []);
