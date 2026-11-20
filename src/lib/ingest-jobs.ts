@@ -57,6 +57,10 @@ export interface IngestJob {
   error?: string;
   /** Display title for the recent-ingests list (best-effort). */
   title?: string;
+  /** Number of MAP chunks that failed during MAP/REDUCE synthesis. */
+  chunksFailed?: number;
+  /** Total number of MAP chunks attempted during MAP/REDUCE synthesis. */
+  chunksTotal?: number;
   createdAt: string;
   updatedAt: string;
 }
@@ -109,7 +113,7 @@ export async function getIngestJob(jobId: string): Promise<IngestJob | null> {
  */
 export async function updateIngestJob(
   jobId: string,
-  patch: Partial<Pick<IngestJob, "status" | "slug" | "error" | "title">>,
+  patch: Partial<Pick<IngestJob, "status" | "slug" | "error" | "title" | "chunksFailed" | "chunksTotal">>,
 ): Promise<IngestJob | null> {
   const existing = await getIngestJob(jobId);
   if (!existing) {

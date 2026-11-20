@@ -33,7 +33,7 @@ async function markFailed(jobId: string, err: unknown): Promise<void> {
 export async function enqueueOrInline(
   jobId: string,
   task: Task,
-  inline: () => Promise<{ primarySlug: string }>,
+  inline: () => Promise<{ primarySlug: string; chunksFailed?: number; chunksTotal?: number }>,
 ): Promise<NextResponse> {
   let enqueued: boolean;
   try {
@@ -47,13 +47,17 @@ export async function enqueueOrInline(
   }
   // Off-Workers inline path: mark failed on throw too (symmetric with the
   // enqueue branch) so the failure is immediate, not 20 minutes later.
-  let result: { primarySlug: string };
+  let result: { primarySlug: string; chunksFailed?: number; chunksTotal?: number };
   try {
     result = await inline();
   } catch (e) {
     await markFailed(jobId, e);
     throw e;
   }
-  await updateIngestJob(jobId, { status: "done", slug: result.primarySlug });
+  await updateIngestJob(jobId, {
+    status: "done",
+    slug: result.primarySlug,
+    ...(result.chunksFailed ? { chunksFailed: result.chunksFailed, chunksTotal: result.chunksTotal } : {}),
+  });
   return NextResponse.json({ queued: true, jobId, slug: result.primarySlug });
 }

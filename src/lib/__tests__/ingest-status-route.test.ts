@@ -130,4 +130,24 @@ describe("GET /api/ingest/status/[jobId]", () => {
     expect(body.status).toBe("failed");
     expect(body.error).toMatch(/stalled/i);
   });
+
+  it("returns chunksFailed and chunksTotal when present on a done job", async () => {
+    mockedGetJob.mockResolvedValue(doneJob({ chunksFailed: 3, chunksTotal: 12 }));
+    const res = await call("j1");
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.status).toBe("done");
+    expect(body.chunksFailed).toBe(3);
+    expect(body.chunksTotal).toBe(12);
+  });
+
+  it("omits chunk fields when job has no chunk failures (backward compatible)", async () => {
+    mockedGetJob.mockResolvedValue(doneJob());
+    const res = await call("j1");
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.status).toBe("done");
+    expect(body.chunksFailed).toBeUndefined();
+    expect(body.chunksTotal).toBeUndefined();
+  });
 });
