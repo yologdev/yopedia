@@ -267,12 +267,12 @@ Reads in yopedia are **public**, so your runtime does **not** need the token to
 consume knowledge — it just scopes requests to the agent. (The token is a
 **write** credential. See the note below on the future of read auth.)
 
-**The agent's assembled context** (identity + learnings + social + shared), one
+**The agent's assembled context** (identity + learnings + social), one
 call — ideal for bootstrapping the agent's working context:
 
 ```bash
 curl "$BASE/api/agents/alice--yoyo/context"
-# → { agent, context: { identity, learnings, socialWisdom, shared }, meta }
+# → { agent, context: { identity, learnings, socialWisdom }, meta }
 ```
 
 **Ask a question scoped to the agent's knowledge:**
