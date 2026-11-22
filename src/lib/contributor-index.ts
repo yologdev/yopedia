@@ -58,6 +58,9 @@ export interface ContributorIndexAuthor {
   firstSeen: string;
   lastSeen: string;
   revertCount: number;
+  /** Number of this author's edited pages that carry `disputed: true`.
+   *  Set by the daily rebuild; incremental hooks leave it to reconcile. */
+  disputedPageCount: number;
 }
 
 /** The full contributor index blob. */
@@ -77,6 +80,7 @@ function emptyIndexAuthor(): ContributorIndexAuthor {
     firstSeen: "",
     lastSeen: "",
     revertCount: 0,
+    disputedPageCount: 0,
   };
 }
 
@@ -118,16 +122,21 @@ function profileFromIndexAuthor(
   handle: string,
   a: ContributorIndexAuthor,
 ): ContributorProfile {
+  const pagesEdited = new Set(a.pagesEdited).size;
+  const disputedPageCount = a.disputedPageCount ?? 0;
+  const disputedPageRate = pagesEdited > 0 ? disputedPageCount / pagesEdited : 0;
   return {
     handle,
     editCount: a.editCount,
-    pagesEdited: new Set(a.pagesEdited).size,
+    pagesEdited,
     commentCount: a.commentCount,
     threadsCreated: a.threadsCreated,
     firstSeen: a.firstSeen || EPOCH,
     lastSeen: a.lastSeen || EPOCH,
     revertCount: a.revertCount,
-    trustScore: computeTrustScore(a.editCount, a.commentCount, a.revertCount),
+    disputedPageCount,
+    disputedPageRate,
+    trustScore: computeTrustScore(a.editCount, a.commentCount, a.revertCount, disputedPageRate),
   };
 }
 
@@ -244,6 +253,11 @@ export function scanDataToIndex(data: ContributorScanData): ContributorIndex {
   const authors: Record<string, ContributorIndexAuthor> = {};
   for (const [handle, act] of data.activityMap) {
     const sorted = act.dates.slice().sort();
+    // Count how many of this author's edited pages are disputed.
+    let disputedPageCount = 0;
+    for (const slug of act.pagesEdited) {
+      if (data.disputedSlugs.has(slug)) disputedPageCount++;
+    }
     authors[handle] = {
       editCount: act.editCount,
       pagesEdited: [...act.pagesEdited],
@@ -252,6 +266,7 @@ export function scanDataToIndex(data: ContributorScanData): ContributorIndex {
       firstSeen: sorted.length > 0 ? sorted[0] : EPOCH,
       lastSeen: sorted.length > 0 ? sorted[sorted.length - 1] : EPOCH,
       revertCount: data.revertCounts.get(handle) ?? 0,
+      disputedPageCount,
     };
   }
   return { authors, totals: computeTotals(authors) };
