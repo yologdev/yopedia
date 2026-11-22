@@ -74,8 +74,9 @@ const priv = (body: string, owner: string): Omit<Page, "slug"> => ({
   title: "Private",
 });
 
-function call(id = "alice--yoyo") {
-  return GET(new Request("http://x/api/agents/x/context"), {
+function call(id = "alice--yoyo", query = "") {
+  const qs = query ? `?${query}` : "";
+  return GET(new Request(`http://x/api/agents/x/context${qs}`), {
     params: Promise.resolve({ id }),
   });
 }
@@ -484,5 +485,94 @@ describe("GET /api/agents/[id]/context — per-page metadata", () => {
     expect(meta.sources).toHaveLength(2);
     expect(meta.sources[0].type).toBe("url");
     expect(meta.sources[1].type).toBe("text");
+  });
+});
+
+describe("GET /api/agents/[id]/context — maxChars truncation", () => {
+  beforeEach(() => {
+    mockedResolve.mockResolvedValue({
+      identityPages: ["id-page"],
+      learningPages: ["learn-page"],
+      socialPages: ["social-page"],
+    } as never);
+    // identity=100 chars, learnings=200 chars, social=300 chars → total=600
+    wirePages({
+      "id-page": pub("I".repeat(100), "Identity"),
+      "learn-page": pub("L".repeat(200), "Learnings"),
+      "social-page": pub("S".repeat(300), "Social"),
+    });
+  });
+
+  it("returns full response with truncated=false when maxChars is omitted", async () => {
+    const json = await (await call()).json();
+    expect(json.context.identity.content).toHaveLength(100);
+    expect(json.context.learnings.content).toHaveLength(200);
+    expect(json.context.socialWisdom.content).toHaveLength(300);
+    expect(json.meta.totalChars).toBe(600);
+    expect(json.meta.truncated).toBe(false);
+  });
+
+  it("returns full response when maxChars exceeds total", async () => {
+    const json = await (await call("alice--yoyo", "maxChars=9999")).json();
+    expect(json.context.identity.content).toHaveLength(100);
+    expect(json.context.learnings.content).toHaveLength(200);
+    expect(json.context.socialWisdom.content).toHaveLength(300);
+    expect(json.meta.truncated).toBe(false);
+  });
+
+  it("truncates social first (lowest priority)", async () => {
+    // Budget 400 → identity(100) + learnings(200) = 300, social gets 100 of 300
+    const json = await (await call("alice--yoyo", "maxChars=400")).json();
+    expect(json.context.identity.content).toHaveLength(100);
+    expect(json.context.learnings.content).toHaveLength(200);
+    expect(json.context.socialWisdom.content).toHaveLength(100);
+    expect(json.meta.truncated).toBe(true);
+    expect(json.meta.totalChars).toBe(600); // original total preserved
+  });
+
+  it("truncates social completely then learnings", async () => {
+    // Budget 250 → identity(100) fits, learnings gets 150 of 200, social gets 0
+    const json = await (await call("alice--yoyo", "maxChars=250")).json();
+    expect(json.context.identity.content).toHaveLength(100);
+    expect(json.context.learnings.content).toHaveLength(150);
+    expect(json.context.socialWisdom.content).toHaveLength(0);
+    expect(json.meta.truncated).toBe(true);
+  });
+
+  it("truncates all sections when maxChars is very small", async () => {
+    // Budget 50 → identity gets 50, learnings 0, social 0
+    const json = await (await call("alice--yoyo", "maxChars=50")).json();
+    expect(json.context.identity.content).toHaveLength(50);
+    expect(json.context.learnings.content).toHaveLength(0);
+    expect(json.context.socialWisdom.content).toHaveLength(0);
+    expect(json.meta.truncated).toBe(true);
+  });
+
+  it("returns 400 for non-positive maxChars", async () => {
+    const res = await call("alice--yoyo", "maxChars=0");
+    expect(res.status).toBe(400);
+    const json = await res.json();
+    expect(json.error).toMatch(/maxChars/);
+  });
+
+  it("returns 400 for non-integer maxChars", async () => {
+    const res = await call("alice--yoyo", "maxChars=abc");
+    expect(res.status).toBe(400);
+  });
+
+  it("returns 400 for negative maxChars", async () => {
+    const res = await call("alice--yoyo", "maxChars=-10");
+    expect(res.status).toBe(400);
+  });
+
+  it("preserves meta.totalChars as the original untruncated total", async () => {
+    const json = await (await call("alice--yoyo", "maxChars=100")).json();
+    expect(json.meta.totalChars).toBe(600);
+    // But actual returned content fits within the budget
+    const actual =
+      json.context.identity.content.length +
+      json.context.learnings.content.length +
+      json.context.socialWisdom.content.length;
+    expect(actual).toBeLessThanOrEqual(100);
   });
 });
