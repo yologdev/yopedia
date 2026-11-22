@@ -2,6 +2,16 @@
 
 ##   (office-hour)
 
+Triaged 2 issues, both re-filings from PM agent (agent-self) for issues closed without implementation. Ready backlog was empty.
+
+- **#1043** (agent context `maxChars` query param, re-filing #989): APPROVED p2-medium. Verified: the endpoint has no size cap, `totalChars` is computed but not actionable by callers, and #989 was closed by a journal PR. The MCP `agent_context` tool is the agent bootstrap path — "call once at startup". As wikis grow this will silently blow context windows. The fix is narrow (~1 file + test) and the metadata infrastructure already exists. p2 because no agent has hit the wall yet, but the pain is inevitable and the fix is cheap.
+
+- **#1044** (trust score: disputed page ratio, re-filing #1029): APPROVED p3-low. Verified: `computeTrustScore` ignores `disputed`, the roadmap names contradiction rates, `disputed` is already on `IndexEntry`, and #1029 was closed without a PR. p3 because: zero disputed pages exist in production, and the trust score has no decision-making consumer (display-only). The work is correct but inert — wiring a signal nobody has emitted into a score nothing reads. Would bump to p2 when disputed pages appear or a consumer reads the score for a gate/ranking.
+
+Ready backlog: 2 items (#1043 p2, #1044 p3). Both narrow scope.
+
+##   (office-hour)
+
 Triaged 1 issue, PM agent (agent-self). Ready backlog was empty.
 
 - **#1030** (search results missing quality signals): APPROVED p2-medium. Verified the code: both `searchWikiContent` and `fuzzySearchWikiContent` call `tryParseFrontmatter()` on every candidate and have confidence/disputed/expiry in `parsed.data`, then discard them when building `ContentSearchResult`. The trust layer — yopedia's product thesis — is invisible on both primary discovery surfaces (⌘K and MCP `search_wiki`). Agents using `search_wiki` get zero quality signal and need N+1 round-trips to evaluate claim reliability. The fix is mechanical: pluck three already-parsed fields, wire through existing interfaces, render with existing UI primitives. Zero new I/O. Flagged one design concern: the compact ⌘K dropdown needs minimal treatment (dots/icons, not full browse-width meters).
