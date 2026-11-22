@@ -48,6 +48,16 @@ interface LoadPagesResult {
 }
 
 /**
+ * Truncate a section's content to fit within `budget` characters.
+ * Returns the (possibly shortened) content string.
+ */
+function truncateContent(content: string, budget: number): string {
+  if (budget <= 0) return "";
+  if (content.length <= budget) return content;
+  return content.slice(0, budget);
+}
+
+/**
  * Extract the metadata fields from frontmatter that agents need
  * to make quality-informed decisions about each page.
  */
@@ -158,6 +168,21 @@ export async function GET(_req: Request, { params }: RouteParams) {
       );
     }
 
+    // Parse optional maxChars query parameter
+    const url = new URL(_req.url);
+    const maxCharsRaw = url.searchParams.get("maxChars");
+    let maxChars: number | null = null;
+    if (maxCharsRaw != null) {
+      const parsed = Number(maxCharsRaw);
+      if (!Number.isInteger(parsed) || parsed <= 0) {
+        return NextResponse.json(
+          { error: "maxChars must be a positive integer" },
+          { status: 400 },
+        );
+      }
+      maxChars = parsed;
+    }
+
     const agent = await getAgent(id);
     if (!agent) {
       return NextResponse.json(
@@ -184,16 +209,42 @@ export async function GET(_req: Request, { params }: RouteParams) {
       social.content.length;
     const pageCount = identity.count + learnings.count + social.count;
 
+    // Apply maxChars truncation in priority order: social (lowest) → learnings → identity (highest).
+    // Each section is trimmed only as much as needed to fit the budget.
+    let truncated = false;
+    let identityContent = identity.content;
+    let learningsContent = learnings.content;
+    let socialContent = social.content;
+
+    if (maxChars != null && totalChars > maxChars) {
+      truncated = true;
+      let budget = maxChars;
+
+      // Truncate social first (lowest priority)
+      const socialBudget = Math.max(0, budget - identityContent.length - learningsContent.length);
+      socialContent = truncateContent(socialContent, socialBudget);
+      budget = maxChars - socialContent.length;
+
+      // Truncate learnings next
+      const learningsBudget = Math.max(0, budget - identityContent.length);
+      learningsContent = truncateContent(learningsContent, learningsBudget);
+      budget = maxChars - socialContent.length - learningsContent.length;
+
+      // Truncate identity last (highest priority)
+      identityContent = truncateContent(identityContent, budget);
+    }
+
     return NextResponse.json({
       agent,
       context: {
-        identity: { content: identity.content, pages: identity.pages },
-        learnings: { content: learnings.content, pages: learnings.pages },
-        socialWisdom: { content: social.content, pages: social.pages },
+        identity: { content: identityContent, pages: identity.pages },
+        learnings: { content: learningsContent, pages: learnings.pages },
+        socialWisdom: { content: socialContent, pages: social.pages },
       },
       meta: {
         totalChars,
         pageCount,
+        truncated,
         generatedAt: new Date().toISOString(),
       },
     });
