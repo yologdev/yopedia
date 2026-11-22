@@ -12,7 +12,7 @@
 // ---------------------------------------------------------------------------
 
 import { getStorage } from "./storage";
-import { listReadableWikiPages, isAgentScopedType, tenantForOwner } from "./wiki";
+import { listReadableWikiPages, isAgentScopedType, tenantForOwner, tryReadWikiPageWithFrontmatter } from "./wiki";
 import type { Principal } from "./auth";
 import { listRevisions, type Revision } from "./revisions";
 import { getDiscussRelPrefix } from "./talk";
@@ -175,13 +175,22 @@ export function reduceReverts(revisionsPerPage: Revision[][]): Map<string, numbe
 // Trust score
 // ---------------------------------------------------------------------------
 
-/** Compute trust score from activity counts and revert rate.
- *  Formula: min(1, (editCount + commentCount) / 50) * (1 - min(0.5, revertCount * 0.1))
- *  Each revert reduces trust by 10%, capped at 50% reduction. */
-export function computeTrustScore(editCount: number, commentCount: number, revertCount: number): number {
+/** Compute trust score from activity counts, revert rate, and disputed page rate.
+ *  Formula: min(1, (editCount + commentCount) / 50)
+ *           * (1 - min(0.5, revertCount * 0.1))
+ *           * (1 - min(0.5, disputedPageRate))
+ *  Each revert reduces trust by 10%, capped at 50% reduction.
+ *  Disputed page rate reduces trust proportionally, also capped at 50%. */
+export function computeTrustScore(
+  editCount: number,
+  commentCount: number,
+  revertCount: number,
+  disputedPageRate: number = 0,
+): number {
   const activityScore = Math.min(1, (editCount + commentCount) / 50);
   const revertPenalty = 1 - Math.min(0.5, revertCount * 0.1);
-  return activityScore * revertPenalty;
+  const disputedPenalty = 1 - Math.min(0.5, disputedPageRate);
+  return activityScore * revertPenalty * disputedPenalty;
 }
 
 // ---------------------------------------------------------------------------
@@ -194,6 +203,8 @@ export interface ContributorScanData {
   activityMap: Map<string, AuthorActivity>;
   /** Revert counts per author handle. */
   revertCounts: Map<string, number>;
+  /** Set of page slugs that carry `disputed: true` in frontmatter. */
+  disputedSlugs: Set<string>;
 }
 
 /**
@@ -215,16 +226,27 @@ export async function computeScanData(
   // both the activity scan and revert detection. Previously each of those
   // re-read all revisions in a serial await-in-loop — N pages turned into N
   // sequential storage round-trips, twice, the dominant cost on the homepage.
-  // Threads load concurrently in the same barrier.
-  const [revisionsPerPage, threads] = await Promise.all([
+  // Threads and frontmatter (for disputed detection) load concurrently in the
+  // same barrier.
+  const [revisionsPerPage, threads, frontmatterPerPage] = await Promise.all([
     Promise.all(pages.map((p) => listRevisions(p.slug, tenantForOwner(p.owner)))),
     loadAllThreads(),
+    Promise.all(pages.map((p) => tryReadWikiPageWithFrontmatter(p.slug))),
   ]);
+
+  // Build the set of slugs whose frontmatter has `disputed: true`.
+  const disputedSlugs = new Set<string>();
+  for (let i = 0; i < pages.length; i++) {
+    const fm = frontmatterPerPage[i];
+    if (fm && fm.frontmatter.disputed === true) {
+      disputedSlugs.add(pages[i].slug);
+    }
+  }
 
   const activityMap = reduceActivity(revisionsPerPage);
   mergeTalkActivity(activityMap, threads);
   const revertCounts = reduceReverts(revisionsPerPage);
-  return { activityMap, revertCounts };
+  return { activityMap, revertCounts, disputedSlugs };
 }
 
 // ---------------------------------------------------------------------------
@@ -235,6 +257,7 @@ function buildProfileFromActivity(
   handle: string,
   act: AuthorActivity,
   revertCount: number,
+  disputedSlugs: Set<string> = new Set(),
 ): ContributorProfile {
   // Sort dates chronologically to find first/last.
   const sorted = act.dates.slice().sort();
@@ -242,16 +265,26 @@ function buildProfileFromActivity(
   const lastSeen =
     sorted.length > 0 ? sorted[sorted.length - 1] : new Date(0).toISOString();
 
+  // Count how many of this author's edited pages are disputed.
+  let disputedPageCount = 0;
+  for (const slug of act.pagesEdited) {
+    if (disputedSlugs.has(slug)) disputedPageCount++;
+  }
+  const pagesEdited = act.pagesEdited.size;
+  const disputedPageRate = pagesEdited > 0 ? disputedPageCount / pagesEdited : 0;
+
   return {
     handle,
     editCount: act.editCount,
-    pagesEdited: act.pagesEdited.size,
+    pagesEdited,
     commentCount: act.commentCount,
     threadsCreated: act.threadsCreated,
     firstSeen,
     lastSeen,
     revertCount,
-    trustScore: computeTrustScore(act.editCount, act.commentCount, revertCount),
+    disputedPageCount,
+    disputedPageRate,
+    trustScore: computeTrustScore(act.editCount, act.commentCount, revertCount, disputedPageRate),
   };
 }
 
@@ -299,7 +332,7 @@ export async function buildContributorProfile(
   const data = scanData ?? (await computeScanData(principal));
   const act = data.activityMap.get(handle) ?? emptyActivity();
   const revertCount = data.revertCounts.get(handle) ?? 0;
-  return buildProfileFromActivity(handle, act, revertCount);
+  return buildProfileFromActivity(handle, act, revertCount, data.disputedSlugs);
 }
 
 /**
@@ -319,7 +352,7 @@ export async function buildContributorProfiles(
   return handles.map((handle) => {
     const act = data.activityMap.get(handle) ?? emptyActivity();
     const revertCount = data.revertCounts.get(handle) ?? 0;
-    return buildProfileFromActivity(handle, act, revertCount);
+    return buildProfileFromActivity(handle, act, revertCount, data.disputedSlugs);
   });
 }
 
@@ -355,7 +388,7 @@ export async function listContributors(
   const profiles: ContributorProfile[] = [];
   for (const [handle, act] of data.activityMap) {
     const revertCount = data.revertCounts.get(handle) ?? 0;
-    profiles.push(buildProfileFromActivity(handle, act, revertCount));
+    profiles.push(buildProfileFromActivity(handle, act, revertCount, data.disputedSlugs));
   }
 
   // Sort by editCount descending, then handle ascending for stability.

@@ -186,9 +186,18 @@ export interface ContributorProfile {
   /** Number of revisions where this author's content was subsequently reverted
    *  (i.e., a later revision by a different author substantially reduced content). */
   revertCount: number;
-  /** Trust score 0–1. Heuristic based on activity volume and revert rate.
-   *  Formula: min(1, (editCount + commentCount) / 50) * (1 - min(0.5, revertCount * 0.1))
-   *  Each revert reduces trust by 10%, capped at 50% reduction. */
+  /** Number of pages edited by this contributor that carry `disputed: true`. */
+  disputedPageCount: number;
+  /** Fraction of this contributor's edited pages that are disputed (0–1).
+   *  `disputedPageCount / pagesEdited`, or 0 when pagesEdited is 0. */
+  disputedPageRate: number;
+  /** Trust score 0–1. Heuristic based on activity volume, revert rate, and
+   *  disputed page rate.
+   *  Formula: min(1, (editCount + commentCount) / 50)
+   *           * (1 - min(0.5, revertCount * 0.1))
+   *           * (1 - min(0.5, disputedPageRate))
+   *  Each revert reduces trust by 10%, capped at 50% reduction.
+   *  Disputed page rate reduces trust proportionally, also capped at 50%. */
   trustScore: number;
 }
 

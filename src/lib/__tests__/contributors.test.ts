@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import fs from "fs/promises";
 import os from "os";
 import path from "path";
-import { buildContributorProfile, buildContributorProfiles, listContributors, computeScanData, reduceReverts } from "../contributors";
+import { buildContributorProfile, buildContributorProfiles, listContributors, computeScanData, computeTrustScore, reduceReverts } from "../contributors";
 import { ensureDirectories, writeWikiPage } from "../wiki";
 import { saveRevision, type Revision } from "../revisions";
 import { createThread, addComment, _resetTimestamp } from "../talk";
@@ -587,6 +587,134 @@ describe("contributors data layer", () => {
       const yoyoProfile = await buildContributorProfile("yoyo", scanData);
       expect(yoyoProfile.revertCount).toBe(1);
       expect(yoyoProfile.trustScore).toBeLessThan(1.0);
+    });
+  });
+
+  describe("computeTrustScore", () => {
+    it("returns 0 when no activity", () => {
+      expect(computeTrustScore(0, 0, 0, 0)).toBe(0);
+    });
+
+    it("caps activity score at 1", () => {
+      // 100 edits + 0 comments = min(1, 100/50) = 1
+      expect(computeTrustScore(100, 0, 0, 0)).toBe(1);
+    });
+
+    it("applies revert penalty", () => {
+      // 50 edits → activityScore = 1; 1 revert → revertPenalty = 0.9
+      expect(computeTrustScore(50, 0, 1, 0)).toBeCloseTo(0.9);
+    });
+
+    it("applies disputed page rate penalty", () => {
+      // 50 edits → activityScore = 1; disputedRate = 0.4 → disputedPenalty = 0.6
+      expect(computeTrustScore(50, 0, 0, 0.4)).toBeCloseTo(0.6);
+    });
+
+    it("caps disputed penalty at 50%", () => {
+      // disputedRate = 1.0 → min(0.5, 1.0) = 0.5 → penalty = 0.5
+      expect(computeTrustScore(50, 0, 0, 1.0)).toBeCloseTo(0.5);
+    });
+
+    it("combines revert and disputed penalties", () => {
+      // 50 edits → 1; 1 revert → 0.9; disputedRate 0.4 → 0.6
+      // 1 * 0.9 * 0.6 = 0.54
+      expect(computeTrustScore(50, 0, 1, 0.4)).toBeCloseTo(0.54);
+    });
+
+    it("defaults disputedPageRate to 0 when omitted", () => {
+      // Backwards-compatible: calling without disputedPageRate should work
+      expect(computeTrustScore(50, 0, 0)).toBe(1);
+    });
+  });
+
+  describe("disputed page tracking", () => {
+    /** Helper: create a wiki page with disputed frontmatter and register in index. */
+    async function createDisputedPage(slug: string, title: string) {
+      await ensureDirectories();
+      const content = `---\ntitle: ${title}\ndisputed: true\n---\n# ${title}\n\nContent.`;
+      await writeWikiPage(slug, content);
+      const indexPath = path.join(process.env.WIKI_DIR!, "index.md");
+      let existing = "";
+      try {
+        existing = await fs.readFile(indexPath, "utf-8");
+      } catch { /* doesn't exist yet */ }
+      const line = `- [${title}](${slug}.md) — Summary of ${title}`;
+      if (!existing.includes(line)) {
+        const newContent = existing
+          ? `${existing.trimEnd()}\n${line}\n`
+          : `# Wiki Index\n\n${line}\n`;
+        await fs.writeFile(indexPath, newContent, "utf-8");
+      }
+    }
+
+    it("contributor with disputed pages has lower trust than one without", async () => {
+      // Create one normal page and one disputed page
+      await createPage("clean-page", "Clean Page", "# Clean Page\n\nContent.");
+      await createDisputedPage("disputed-page", "Disputed Page");
+
+      // Alice edits the disputed page, Bob edits the clean page
+      await saveRevision("disputed-page", "---\ntitle: Disputed Page\ndisputed: true\n---\n# Disputed Page\n\nv1", "alice", undefined, "yopedia");
+      await saveRevision("clean-page", "# Clean Page\n\nv1", "bob", undefined, "yopedia");
+
+      const scanData = await computeScanData();
+      const alice = await buildContributorProfile("alice", scanData);
+      const bob = await buildContributorProfile("bob", scanData);
+
+      // Same edit counts, but alice has a disputed page
+      expect(alice.editCount).toBe(1);
+      expect(bob.editCount).toBe(1);
+      expect(alice.disputedPageCount).toBe(1);
+      expect(alice.disputedPageRate).toBe(1); // 1 of 1 pages disputed
+      expect(bob.disputedPageCount).toBe(0);
+      expect(bob.disputedPageRate).toBe(0);
+      expect(alice.trustScore).toBeLessThan(bob.trustScore);
+    });
+
+    it("populates disputedPageCount and disputedPageRate in profile", async () => {
+      await createPage("normal-1", "Normal 1", "# Normal 1\n\nContent.");
+      await createDisputedPage("disputed-1", "Disputed 1");
+      await createPage("normal-2", "Normal 2", "# Normal 2\n\nContent.");
+
+      // Alice edits all three pages
+      await saveRevision("normal-1", "# Normal 1\n\nv1", "alice", undefined, "yopedia");
+      await saveRevision("disputed-1", "---\ntitle: Disputed 1\ndisputed: true\n---\n# Disputed 1\n\nv1", "alice", undefined, "yopedia");
+      await saveRevision("normal-2", "# Normal 2\n\nv1", "alice", undefined, "yopedia");
+
+      const scanData = await computeScanData();
+      const alice = await buildContributorProfile("alice", scanData);
+
+      expect(alice.pagesEdited).toBe(3);
+      expect(alice.disputedPageCount).toBe(1);
+      expect(alice.disputedPageRate).toBeCloseTo(1 / 3);
+    });
+
+    it("scanData includes disputed slugs", async () => {
+      await createPage("clean", "Clean", "# Clean\n\nContent.");
+      await createDisputedPage("flagged", "Flagged");
+
+      await saveRevision("clean", "# Clean\n\nv1", "alice", undefined, "yopedia");
+      await saveRevision("flagged", "---\ntitle: Flagged\ndisputed: true\n---\n# Flagged\n\nv1", "alice", undefined, "yopedia");
+
+      const scanData = await computeScanData();
+      expect(scanData.disputedSlugs.has("flagged")).toBe(true);
+      expect(scanData.disputedSlugs.has("clean")).toBe(false);
+    });
+
+    it("listContributors surfaces disputed fields", async () => {
+      await createDisputedPage("d-page", "D Page");
+      await saveRevision("d-page", "---\ntitle: D Page\ndisputed: true\n---\n# D Page\n\nv1", "alice", undefined, "yopedia");
+
+      const contributors = await listContributors();
+      expect(contributors).toHaveLength(1);
+      expect(contributors[0].disputedPageCount).toBe(1);
+      expect(contributors[0].disputedPageRate).toBe(1);
+    });
+
+    it("zeroed profile has zero disputed fields", async () => {
+      await ensureDirectories();
+      const profile = await buildContributorProfile("ghost");
+      expect(profile.disputedPageCount).toBe(0);
+      expect(profile.disputedPageRate).toBe(0);
     });
   });
 });
