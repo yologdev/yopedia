@@ -61,6 +61,9 @@ export interface ContributorIndexAuthor {
   /** Number of this author's edited pages that carry `disputed: true`.
    *  Set by the daily rebuild; incremental hooks leave it to reconcile. */
   disputedPageCount: number;
+  /** Number of this author's edited pages that have at least one external
+   *  (non-text) source. Set by the daily rebuild. */
+  citedPageCount: number;
 }
 
 /** The full contributor index blob. */
@@ -81,6 +84,7 @@ function emptyIndexAuthor(): ContributorIndexAuthor {
     lastSeen: "",
     revertCount: 0,
     disputedPageCount: 0,
+    citedPageCount: 0,
   };
 }
 
@@ -125,6 +129,8 @@ function profileFromIndexAuthor(
   const pagesEdited = new Set(a.pagesEdited).size;
   const disputedPageCount = a.disputedPageCount ?? 0;
   const disputedPageRate = pagesEdited > 0 ? disputedPageCount / pagesEdited : 0;
+  const citedPageCount = a.citedPageCount ?? 0;
+  const citedPageRate = pagesEdited > 0 ? citedPageCount / pagesEdited : 0;
   return {
     handle,
     editCount: a.editCount,
@@ -136,7 +142,8 @@ function profileFromIndexAuthor(
     revertCount: a.revertCount,
     disputedPageCount,
     disputedPageRate,
-    trustScore: computeTrustScore(a.editCount, a.commentCount, a.revertCount, disputedPageRate),
+    citedPageRate,
+    trustScore: computeTrustScore(a.editCount, a.commentCount, a.revertCount, disputedPageRate, citedPageRate),
   };
 }
 
@@ -253,10 +260,12 @@ export function scanDataToIndex(data: ContributorScanData): ContributorIndex {
   const authors: Record<string, ContributorIndexAuthor> = {};
   for (const [handle, act] of data.activityMap) {
     const sorted = act.dates.slice().sort();
-    // Count how many of this author's edited pages are disputed.
+    // Count how many of this author's edited pages are disputed / cited.
     let disputedPageCount = 0;
+    let citedPageCount = 0;
     for (const slug of act.pagesEdited) {
       if (data.disputedSlugs.has(slug)) disputedPageCount++;
+      if (data.citedSlugs.has(slug)) citedPageCount++;
     }
     authors[handle] = {
       editCount: act.editCount,
@@ -267,6 +276,7 @@ export function scanDataToIndex(data: ContributorScanData): ContributorIndex {
       lastSeen: sorted.length > 0 ? sorted[sorted.length - 1] : EPOCH,
       revertCount: data.revertCounts.get(handle) ?? 0,
       disputedPageCount,
+      citedPageCount,
     };
   }
   return { authors, totals: computeTotals(authors) };

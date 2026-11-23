@@ -133,4 +133,47 @@ describe("rebuildContributorIndex + read parity", () => {
     expect(profiles[0].editCount).toBe(2);
     expect(profiles.every((p) => p.trustScore >= 0 && p.trustScore <= 1)).toBe(true);
   });
+
+  it("rebuild persists citedPageCount and citedPageRate flows through profiles", async () => {
+    const sources = JSON.stringify([
+      { type: "url", url: "https://example.com/test", fetched: "2026-01-01T00:00:00Z", triggered_by: "system" },
+    ]);
+    const citedContent = `---\ntitle: Cited\nsources: '${sources}'\n---\n# Cited\n\nbody`;
+    await createPage("cited-idx", "Cited", citedContent);
+    await createPage("uncited-idx", "Uncited", "# Uncited\n\nbody");
+    await saveRevision("cited-idx", citedContent, "alice", undefined, "yopedia");
+    await saveRevision("uncited-idx", "# Uncited\n\nv1", "alice", undefined, "yopedia");
+
+    const idx = await rebuildContributorIndex();
+    // The index should store the cited page count.
+    expect(idx.authors.alice.citedPageCount).toBe(1);
+
+    // Profile built from the index should carry the citation rate.
+    const profiles = profilesFromIndex(idx);
+    expect(profiles[0].handle).toBe("alice");
+    expect(profiles[0].citedPageRate).toBeCloseTo(0.5); // 1 of 2 pages cited
+  });
+
+  it("index-based profile matches live scan for citedPageRate", async () => {
+    const sources = JSON.stringify([
+      { type: "url", url: "https://example.com/parity", fetched: "2026-01-01T00:00:00Z", triggered_by: "system" },
+    ]);
+    const citedContent = `---\ntitle: Parity\nsources: '${sources}'\n---\n# Parity\n\nbody`;
+    await createPage("parity-cited", "Parity", citedContent);
+    await saveRevision("parity-cited", citedContent, "alice", undefined, "yopedia");
+
+    // Fallback (no index) → live scan.
+    expect(await getContributorIndex()).toBeNull();
+    const fallback = await listContributors(null);
+
+    // Rebuild → fast path.
+    await rebuildContributorIndex();
+    const fast = await listContributors(null);
+
+    expect(fast.length).toBe(fallback.length);
+    for (let i = 0; i < fast.length; i++) {
+      expect(fast[i].citedPageRate).toBe(fallback[i].citedPageRate);
+      expect(fast[i]).toEqual(fallback[i]);
+    }
+  });
 });

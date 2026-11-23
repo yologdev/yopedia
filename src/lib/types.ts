@@ -191,13 +191,19 @@ export interface ContributorProfile {
   /** Fraction of this contributor's edited pages that are disputed (0–1).
    *  `disputedPageCount / pagesEdited`, or 0 when pagesEdited is 0. */
   disputedPageRate: number;
-  /** Trust score 0–1. Heuristic based on activity volume, revert rate, and
-   *  disputed page rate.
+  /** Fraction of this contributor's edited pages that have at least one
+   *  external (non-text-paste) source — i.e. a real URL/PDF/image/YouTube/
+   *  X-mention provenance entry (0–1). */
+  citedPageRate: number;
+  /** Trust score 0–1. Heuristic based on activity volume, revert rate,
+   *  disputed page rate, and external citation rate.
    *  Formula: min(1, (editCount + commentCount) / 50)
    *           * (1 - min(0.5, revertCount * 0.1))
    *           * (1 - min(0.5, disputedPageRate))
+   *           + min(0.15, citedPageRate * 0.15)
    *  Each revert reduces trust by 10%, capped at 50% reduction.
-   *  Disputed page rate reduces trust proportionally, also capped at 50%. */
+   *  Disputed page rate reduces trust proportionally, also capped at 50%.
+   *  External citation rate adds a bonus up to +0.15 (capped at 1.0 total). */
   trustScore: number;
 }
 

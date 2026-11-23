@@ -717,4 +717,172 @@ describe("contributors data layer", () => {
       expect(profile.disputedPageRate).toBe(0);
     });
   });
+
+  describe("citation rate tracking", () => {
+    /** Helper: create a page with a URL source (externally cited). */
+    async function createCitedPage(slug: string, title: string) {
+      await ensureDirectories();
+      const sources = JSON.stringify([
+        { type: "url", url: "https://example.com/" + slug, fetched: "2026-01-01T00:00:00Z", triggered_by: "system" },
+      ]);
+      const content = `---\ntitle: ${title}\nsources: '${sources}'\n---\n# ${title}\n\nContent.`;
+      await writeWikiPage(slug, content);
+      const indexPath = path.join(process.env.WIKI_DIR!, "index.md");
+      let existing = "";
+      try {
+        existing = await fs.readFile(indexPath, "utf-8");
+      } catch { /* doesn't exist yet */ }
+      const line = `- [${title}](${slug}.md) — Summary of ${title}`;
+      if (!existing.includes(line)) {
+        const newContent = existing
+          ? `${existing.trimEnd()}\n${line}\n`
+          : `# Wiki Index\n\n${line}\n`;
+        await fs.writeFile(indexPath, newContent, "utf-8");
+      }
+    }
+
+    /** Helper: create a page with only a text-paste source (no external citation). */
+    async function createTextOnlyPage(slug: string, title: string) {
+      await ensureDirectories();
+      const sources = JSON.stringify([
+        { type: "text", url: "text-paste", fetched: "2026-01-01T00:00:00Z", triggered_by: "system" },
+      ]);
+      const content = `---\ntitle: ${title}\nsources: '${sources}'\n---\n# ${title}\n\nContent.`;
+      await writeWikiPage(slug, content);
+      const indexPath = path.join(process.env.WIKI_DIR!, "index.md");
+      let existing = "";
+      try {
+        existing = await fs.readFile(indexPath, "utf-8");
+      } catch { /* doesn't exist yet */ }
+      const line = `- [${title}](${slug}.md) — Summary of ${title}`;
+      if (!existing.includes(line)) {
+        const newContent = existing
+          ? `${existing.trimEnd()}\n${line}\n`
+          : `# Wiki Index\n\n${line}\n`;
+        await fs.writeFile(indexPath, newContent, "utf-8");
+      }
+    }
+
+    it("contributor with all-cited pages scores higher than one with no sources", async () => {
+      await createCitedPage("cited-page", "Cited Page");
+      await createPage("uncited-page", "Uncited Page", "# Uncited Page\n\nContent.");
+
+      // Alice edits the cited page, Bob edits the uncited page
+      await saveRevision("cited-page", `---\ntitle: Cited Page\nsources: '${JSON.stringify([{ type: "url", url: "https://example.com/cited", fetched: "2026-01-01T00:00:00Z", triggered_by: "system" }])}'\n---\n# Cited Page\n\nv1`, "alice", undefined, "yopedia");
+      await saveRevision("uncited-page", "# Uncited Page\n\nv1", "bob", undefined, "yopedia");
+
+      const scanData = await computeScanData();
+      const alice = await buildContributorProfile("alice", scanData);
+      const bob = await buildContributorProfile("bob", scanData);
+
+      // Same edit counts, but alice has cited pages
+      expect(alice.editCount).toBe(1);
+      expect(bob.editCount).toBe(1);
+      expect(alice.citedPageRate).toBe(1); // 1 of 1 pages cited
+      expect(bob.citedPageRate).toBe(0);
+      expect(alice.trustScore).toBeGreaterThan(bob.trustScore);
+    });
+
+    it("text-only source does not count as cited", async () => {
+      await createTextOnlyPage("text-only", "Text Only");
+
+      await saveRevision("text-only", `---\ntitle: Text Only\nsources: '${JSON.stringify([{ type: "text", url: "text-paste", fetched: "2026-01-01T00:00:00Z", triggered_by: "system" }])}'\n---\n# Text Only\n\nv1`, "alice", undefined, "yopedia");
+
+      const scanData = await computeScanData();
+      const alice = await buildContributorProfile("alice", scanData);
+
+      expect(alice.citedPageRate).toBe(0);
+    });
+
+    it("citation bonus caps at 0.15", () => {
+      // A fully-active contributor (50 edits) with 100% citation rate
+      // should get the base trust (1.0) + 0.15 bonus, capped at 1.0
+      const withCitation = computeTrustScore(50, 0, 0, 0, 1.0);
+      expect(withCitation).toBeCloseTo(1.0); // 1.0 + 0.15 = 1.15, capped at 1.0
+
+      // A less active contributor: base < 1.0, citation bonus adds up to 0.15
+      const withCitationLow = computeTrustScore(10, 0, 0, 0, 1.0);
+      const withoutCitation = computeTrustScore(10, 0, 0, 0, 0);
+      expect(withCitationLow - withoutCitation).toBeCloseTo(0.15);
+    });
+
+    it("zero-page contributor gets citedPageRate 0", async () => {
+      await ensureDirectories();
+      const profile = await buildContributorProfile("ghost");
+      expect(profile.citedPageRate).toBe(0);
+    });
+
+    it("scanData includes cited slugs", async () => {
+      await createCitedPage("cited-scan", "Cited Scan");
+      await createPage("uncited-scan", "Uncited Scan", "# Uncited Scan\n\nContent.");
+
+      await saveRevision("cited-scan", `---\ntitle: Cited Scan\nsources: '${JSON.stringify([{ type: "url", url: "https://example.com/scan", fetched: "2026-01-01T00:00:00Z", triggered_by: "system" }])}'\n---\n# Cited Scan\n\nv1`, "alice", undefined, "yopedia");
+      await saveRevision("uncited-scan", "# Uncited Scan\n\nv1", "alice", undefined, "yopedia");
+
+      const scanData = await computeScanData();
+      expect(scanData.citedSlugs.has("cited-scan")).toBe(true);
+      expect(scanData.citedSlugs.has("uncited-scan")).toBe(false);
+    });
+
+    it("listContributors surfaces citedPageRate", async () => {
+      await createCitedPage("cited-list", "Cited List");
+      await saveRevision("cited-list", `---\ntitle: Cited List\nsources: '${JSON.stringify([{ type: "url", url: "https://example.com/list", fetched: "2026-01-01T00:00:00Z", triggered_by: "system" }])}'\n---\n# Cited List\n\nv1`, "alice", undefined, "yopedia");
+
+      const contributors = await listContributors();
+      expect(contributors).toHaveLength(1);
+      expect(contributors[0].citedPageRate).toBe(1);
+    });
+
+    it("partial citation rate is computed correctly", async () => {
+      await createCitedPage("cited-partial", "Cited Partial");
+      await createPage("uncited-partial", "Uncited Partial", "# Uncited Partial\n\nContent.");
+      await createPage("uncited-partial-2", "Uncited Partial 2", "# Uncited Partial 2\n\nContent.");
+
+      // Alice edits 3 pages, 1 cited
+      await saveRevision("cited-partial", `---\ntitle: Cited Partial\nsources: '${JSON.stringify([{ type: "url", url: "https://example.com/partial", fetched: "2026-01-01T00:00:00Z", triggered_by: "system" }])}'\n---\n# Cited Partial\n\nv1`, "alice", undefined, "yopedia");
+      await saveRevision("uncited-partial", "# Uncited Partial\n\nv1", "alice", undefined, "yopedia");
+      await saveRevision("uncited-partial-2", "# Uncited Partial 2\n\nv1", "alice", undefined, "yopedia");
+
+      const scanData = await computeScanData();
+      const alice = await buildContributorProfile("alice", scanData);
+
+      expect(alice.pagesEdited).toBe(3);
+      expect(alice.citedPageRate).toBeCloseTo(1 / 3);
+    });
+  });
+
+  describe("computeTrustScore with citation bonus", () => {
+    it("adds citation bonus to base trust", () => {
+      // Use lower activity so base trust is below 1.0 and the bonus is visible
+      const withoutCitation = computeTrustScore(20, 0, 0, 0, 0);
+      const withCitation = computeTrustScore(20, 0, 0, 0, 1.0);
+      expect(withCitation).toBeGreaterThan(withoutCitation);
+      // base = 20/50 = 0.4; bonus = min(0.15, 1.0*0.15) = 0.15
+      expect(withCitation - withoutCitation).toBeCloseTo(0.15);
+    });
+
+    it("citation bonus scales with citedPageRate", () => {
+      // 50% cited → half the bonus
+      const half = computeTrustScore(20, 0, 0, 0, 0.5);
+      const none = computeTrustScore(20, 0, 0, 0, 0);
+      expect(half - none).toBeCloseTo(0.075);
+    });
+
+    it("total trust is capped at 1.0", () => {
+      // Even with maximum citation bonus, trust cannot exceed 1.0
+      expect(computeTrustScore(100, 100, 0, 0, 1.0)).toBeLessThanOrEqual(1.0);
+    });
+
+    it("defaults citedPageRate to 0 when omitted (backwards compatible)", () => {
+      expect(computeTrustScore(50, 0, 0)).toBe(1);
+      expect(computeTrustScore(50, 0, 0, 0)).toBe(1);
+    });
+
+    it("citation bonus does not help when base activity is zero", () => {
+      // 0 edits → activityScore = 0 → base = 0; citation bonus still adds
+      // but 0 + 0.15 = 0.15 since the bonus is additive
+      const result = computeTrustScore(0, 0, 0, 0, 1.0);
+      expect(result).toBeCloseTo(0.15);
+    });
+  });
 });
