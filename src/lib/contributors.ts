@@ -19,6 +19,7 @@ import { getDiscussRelPrefix } from "./talk";
 import { isEnoent } from "./errors";
 import { logger } from "./logger";
 import { normalizeActor, isAutomationActor } from "./agent-handle";
+import { parseSources } from "./sources";
 import type { ContributorProfile, TalkThread } from "./types";
 
 // ---------------------------------------------------------------------------
@@ -175,22 +176,28 @@ export function reduceReverts(revisionsPerPage: Revision[][]): Map<string, numbe
 // Trust score
 // ---------------------------------------------------------------------------
 
-/** Compute trust score from activity counts, revert rate, and disputed page rate.
- *  Formula: min(1, (editCount + commentCount) / 50)
- *           * (1 - min(0.5, revertCount * 0.1))
- *           * (1 - min(0.5, disputedPageRate))
+/** Compute trust score from activity counts, revert rate, disputed page rate,
+ *  and external citation rate.
+ *  Formula: min(1, min(1, (editCount + commentCount) / 50)
+ *                  * (1 - min(0.5, revertCount * 0.1))
+ *                  * (1 - min(0.5, disputedPageRate))
+ *                  + min(0.15, citedPageRate * 0.15))
  *  Each revert reduces trust by 10%, capped at 50% reduction.
- *  Disputed page rate reduces trust proportionally, also capped at 50%. */
+ *  Disputed page rate reduces trust proportionally, also capped at 50%.
+ *  External citation rate adds a bonus up to +0.15, mirroring the
+ *  corroboration bonus range in `computeConfidence`. */
 export function computeTrustScore(
   editCount: number,
   commentCount: number,
   revertCount: number,
   disputedPageRate: number = 0,
+  citedPageRate: number = 0,
 ): number {
   const activityScore = Math.min(1, (editCount + commentCount) / 50);
   const revertPenalty = 1 - Math.min(0.5, revertCount * 0.1);
   const disputedPenalty = 1 - Math.min(0.5, disputedPageRate);
-  return activityScore * revertPenalty * disputedPenalty;
+  const citationBonus = Math.min(0.15, citedPageRate * 0.15);
+  return Math.min(1, activityScore * revertPenalty * disputedPenalty + citationBonus);
 }
 
 // ---------------------------------------------------------------------------
@@ -205,6 +212,8 @@ export interface ContributorScanData {
   revertCounts: Map<string, number>;
   /** Set of page slugs that carry `disputed: true` in frontmatter. */
   disputedSlugs: Set<string>;
+  /** Set of page slugs that have at least one external (non-text) source. */
+  citedSlugs: Set<string>;
 }
 
 /**
@@ -234,19 +243,26 @@ export async function computeScanData(
     Promise.all(pages.map((p) => tryReadWikiPageWithFrontmatter(p.slug))),
   ]);
 
-  // Build the set of slugs whose frontmatter has `disputed: true`.
+  // Build the set of slugs whose frontmatter has `disputed: true`, and
+  // the set of slugs that have at least one external (non-text) source.
   const disputedSlugs = new Set<string>();
+  const citedSlugs = new Set<string>();
   for (let i = 0; i < pages.length; i++) {
     const fm = frontmatterPerPage[i];
-    if (fm && fm.frontmatter.disputed === true) {
+    if (!fm) continue;
+    if (fm.frontmatter.disputed === true) {
       disputedSlugs.add(pages[i].slug);
+    }
+    const sources = parseSources(fm.frontmatter.sources as string | string[] | undefined);
+    if (sources.some((s) => s.type !== "text")) {
+      citedSlugs.add(pages[i].slug);
     }
   }
 
   const activityMap = reduceActivity(revisionsPerPage);
   mergeTalkActivity(activityMap, threads);
   const revertCounts = reduceReverts(revisionsPerPage);
-  return { activityMap, revertCounts, disputedSlugs };
+  return { activityMap, revertCounts, disputedSlugs, citedSlugs };
 }
 
 // ---------------------------------------------------------------------------
@@ -258,6 +274,7 @@ function buildProfileFromActivity(
   act: AuthorActivity,
   revertCount: number,
   disputedSlugs: Set<string> = new Set(),
+  citedSlugs: Set<string> = new Set(),
 ): ContributorProfile {
   // Sort dates chronologically to find first/last.
   const sorted = act.dates.slice().sort();
@@ -265,13 +282,16 @@ function buildProfileFromActivity(
   const lastSeen =
     sorted.length > 0 ? sorted[sorted.length - 1] : new Date(0).toISOString();
 
-  // Count how many of this author's edited pages are disputed.
+  // Count how many of this author's edited pages are disputed / cited.
   let disputedPageCount = 0;
+  let citedPageCount = 0;
   for (const slug of act.pagesEdited) {
     if (disputedSlugs.has(slug)) disputedPageCount++;
+    if (citedSlugs.has(slug)) citedPageCount++;
   }
   const pagesEdited = act.pagesEdited.size;
   const disputedPageRate = pagesEdited > 0 ? disputedPageCount / pagesEdited : 0;
+  const citedPageRate = pagesEdited > 0 ? citedPageCount / pagesEdited : 0;
 
   return {
     handle,
@@ -284,7 +304,8 @@ function buildProfileFromActivity(
     revertCount,
     disputedPageCount,
     disputedPageRate,
-    trustScore: computeTrustScore(act.editCount, act.commentCount, revertCount, disputedPageRate),
+    citedPageRate,
+    trustScore: computeTrustScore(act.editCount, act.commentCount, revertCount, disputedPageRate, citedPageRate),
   };
 }
 
@@ -332,7 +353,7 @@ export async function buildContributorProfile(
   const data = scanData ?? (await computeScanData(principal));
   const act = data.activityMap.get(handle) ?? emptyActivity();
   const revertCount = data.revertCounts.get(handle) ?? 0;
-  return buildProfileFromActivity(handle, act, revertCount, data.disputedSlugs);
+  return buildProfileFromActivity(handle, act, revertCount, data.disputedSlugs, data.citedSlugs);
 }
 
 /**
@@ -352,7 +373,7 @@ export async function buildContributorProfiles(
   return handles.map((handle) => {
     const act = data.activityMap.get(handle) ?? emptyActivity();
     const revertCount = data.revertCounts.get(handle) ?? 0;
-    return buildProfileFromActivity(handle, act, revertCount, data.disputedSlugs);
+    return buildProfileFromActivity(handle, act, revertCount, data.disputedSlugs, data.citedSlugs);
   });
 }
 
@@ -388,7 +409,7 @@ export async function listContributors(
   const profiles: ContributorProfile[] = [];
   for (const [handle, act] of data.activityMap) {
     const revertCount = data.revertCounts.get(handle) ?? 0;
-    profiles.push(buildProfileFromActivity(handle, act, revertCount, data.disputedSlugs));
+    profiles.push(buildProfileFromActivity(handle, act, revertCount, data.disputedSlugs, data.citedSlugs));
   }
 
   // Sort by editCount descending, then handle ascending for stability.
