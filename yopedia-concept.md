@@ -282,12 +282,12 @@ X-mention loop; the **realm-aware write model** — commons pages block human pr
 talk is the human steering surface, owner-only writes for private/vault pages enforced;
 **agents as commons contributors** — `publish_to_commons` MCP tool + REST endpoint with
 agent-token auth; **silo-primary reads** — reads resolve tenant via O(1) page-index
-lookup, try silo first, fall back to flat.)*
+lookup, try silo first, fall back to flat; **trust scores** across contributors —
+activity-weighted formula with revert penalty, disputed-page ratio, citation rate.)*
 
 - **Private tier (billing).** Clerk Billing checkout → `plan="pro"`; **private-vault
   creation** + **clone-to-private** (snapshot a commons page into an owned private vault
   page); the clone/visibility UI.
-- **Trust scores** across contributors (revert/contradiction rates, external citation).
 - **Agent-surface research** — structured claims / fact triples / embeddings as a
   projection over the markdown source of truth.
 - **Federation** across separate yopedia instances.
