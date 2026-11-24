@@ -49,7 +49,8 @@ Near-term threads (commons-first):
   storage layer; all legacy flat-path writes and fallback reads have been removed.
 - **Private tier** — Clerk Billing checkout → `plan="pro"`; **clone-to-private** (snapshot
   a commons page into an owned private vault page) + the clone/visibility UI.
-- Trust scores, agent-surface research, federation.
+- **Trust scores** — complete (activity-weighted formula, revert penalty, disputed-page
+  ratio, citation rate). Remaining: agent-surface research, federation.
 
 ## Autonomous Growth Loop
 
