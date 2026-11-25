@@ -78,6 +78,12 @@ export default function RootLayout({
     >
       <head>
         <script dangerouslySetInnerHTML={{ __html: themeScript }} />
+        <link
+          rel="alternate"
+          type="application/atom+xml"
+          title="yopedia — recent wiki activity"
+          href="/feed.xml"
+        />
       </head>
       <body className="min-h-screen antialiased flex flex-col">
         {/* `waitlistUrl` makes Clerk's sign-in modal route new sign-ups to our
