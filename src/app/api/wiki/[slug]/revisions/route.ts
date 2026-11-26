@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { readWikiPageWithFrontmatter, writeWikiPageWithSideEffects, tenantForOwner } from "@/lib/wiki";
-import { listRevisions, readRevision, readRevisionMeta } from "@/lib/revisions";
+import { listRevisions, readRevision, readRevisionMeta, diffRevisions } from "@/lib/revisions";
 import { extractSummary } from "@/lib/ingest";
 import { serializeFrontmatter } from "@/lib/frontmatter";
 import { getPrincipal, getServicePrincipal } from "@/lib/auth";
@@ -15,6 +15,7 @@ type RouteParams = { params: Promise<{ slug: string }> };
  * Without query params: returns `{ revisions: Revision[] }`.
  * With `?timestamp=<ms>`: returns `{ content: string, revision: Revision }` for
  * a specific revision.
+ * With `?diff=tsA,tsB`: returns a structured line-level diff between revisions A and B.
  *
  * 404 if the page doesn't exist.
  * 200 with empty array if the page exists but has no revisions.
@@ -42,8 +43,39 @@ export async function GET(req: Request, { params }: RouteParams) {
 
     const url = new URL(req.url);
     const timestampParam = url.searchParams.get("timestamp");
+    const diffParam = url.searchParams.get("diff");
     const owner = typeof page.frontmatter.owner === "string" ? page.frontmatter.owner : undefined;
     const tenant = tenantForOwner(owner);
+
+    // --- Diff between two revisions: ?diff=tsA,tsB ---
+    if (diffParam !== null) {
+      const parts = diffParam.split(",");
+      if (parts.length !== 2) {
+        return NextResponse.json(
+          { error: "diff parameter must be two comma-separated timestamps, e.g. ?diff=1000,2000" },
+          { status: 400 },
+        );
+      }
+      const tsA = Number(parts[0]);
+      const tsB = Number(parts[1]);
+      if (!Number.isFinite(tsA) || tsA <= 0 || !Number.isFinite(tsB) || tsB <= 0) {
+        return NextResponse.json(
+          { error: "both diff timestamps must be positive numbers" },
+          { status: 400 },
+        );
+      }
+
+      try {
+        const diff = await diffRevisions(slug, tsA, tsB, tenant);
+        return NextResponse.json(diff);
+      } catch (err) {
+        const msg = getErrorMessage(err);
+        if (msg.startsWith("revision not found")) {
+          return NextResponse.json({ error: msg }, { status: 404 });
+        }
+        throw err;
+      }
+    }
 
     if (timestampParam !== null) {
       // Fetch a specific revision's content.

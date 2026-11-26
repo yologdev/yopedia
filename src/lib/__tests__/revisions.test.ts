@@ -10,6 +10,8 @@ import {
   readRevisionMeta,
   deleteRevisions,
   getRevisionsDir,
+  diffRevisions,
+  computeLineDiff,
 } from "../revisions";
 import { writeWikiPage, ensureDirectories } from "../wiki";
 import { _resetStorage } from "../storage";
@@ -693,5 +695,198 @@ describe("deleteRevisions with tenant parameter", () => {
     await ensureDirectories();
     // Should not throw
     await deleteRevisions("nonexistent", "grace");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Diff tests
+// ---------------------------------------------------------------------------
+
+describe("computeLineDiff", () => {
+  it("returns empty array for two empty strings", () => {
+    const lines = computeLineDiff("", "");
+    // Both are single empty lines — identical.
+    expect(lines).toEqual([{ type: "context", content: "" }]);
+  });
+
+  it("returns all context lines for identical content", () => {
+    const text = "line 1\nline 2\nline 3";
+    const lines = computeLineDiff(text, text);
+    expect(lines).toEqual([
+      { type: "context", content: "line 1" },
+      { type: "context", content: "line 2" },
+      { type: "context", content: "line 3" },
+    ]);
+  });
+
+  it("detects additions", () => {
+    const textA = "line 1\nline 3";
+    const textB = "line 1\nline 2\nline 3";
+    const lines = computeLineDiff(textA, textB);
+    expect(lines).toEqual([
+      { type: "context", content: "line 1" },
+      { type: "add", content: "line 2" },
+      { type: "context", content: "line 3" },
+    ]);
+  });
+
+  it("detects removals", () => {
+    const textA = "line 1\nline 2\nline 3";
+    const textB = "line 1\nline 3";
+    const lines = computeLineDiff(textA, textB);
+    expect(lines).toEqual([
+      { type: "context", content: "line 1" },
+      { type: "remove", content: "line 2" },
+      { type: "context", content: "line 3" },
+    ]);
+  });
+
+  it("detects mixed additions and removals", () => {
+    const textA = "# Title\n\nOld paragraph.\n\nKeep this.";
+    const textB = "# Title\n\nNew paragraph.\n\nKeep this.\n\nExtra section.";
+    const lines = computeLineDiff(textA, textB);
+
+    // Check that "Old paragraph." is removed and "New paragraph." is added.
+    const removed = lines.filter((l) => l.type === "remove");
+    const added = lines.filter((l) => l.type === "add");
+    expect(removed.some((l) => l.content === "Old paragraph.")).toBe(true);
+    expect(added.some((l) => l.content === "New paragraph.")).toBe(true);
+    expect(added.some((l) => l.content === "Extra section.")).toBe(true);
+
+    // Context lines preserved.
+    const ctx = lines.filter((l) => l.type === "context");
+    expect(ctx.some((l) => l.content === "# Title")).toBe(true);
+    expect(ctx.some((l) => l.content === "Keep this.")).toBe(true);
+  });
+
+  it("handles completely different content", () => {
+    const textA = "aaa\nbbb";
+    const textB = "xxx\nyyy";
+    const lines = computeLineDiff(textA, textB);
+    const removed = lines.filter((l) => l.type === "remove");
+    const added = lines.filter((l) => l.type === "add");
+    expect(removed).toHaveLength(2);
+    expect(added).toHaveLength(2);
+  });
+
+  it("handles empty A (all additions)", () => {
+    const lines = computeLineDiff("", "new line 1\nnew line 2");
+    // The empty string becomes a single empty line; the other has two lines.
+    const added = lines.filter((l) => l.type === "add");
+    expect(added.some((l) => l.content === "new line 1")).toBe(true);
+    expect(added.some((l) => l.content === "new line 2")).toBe(true);
+  });
+
+  it("handles empty B (all removals)", () => {
+    const lines = computeLineDiff("old line 1\nold line 2", "");
+    const removed = lines.filter((l) => l.type === "remove");
+    expect(removed.some((l) => l.content === "old line 1")).toBe(true);
+    expect(removed.some((l) => l.content === "old line 2")).toBe(true);
+  });
+});
+
+describe("diffRevisions", () => {
+  it("returns structured diff between two revisions", async () => {
+    await ensureDirectories();
+    const dir = getRevisionsDir("diff-test");
+    await fs.mkdir(dir, { recursive: true });
+
+    await fs.writeFile(path.join(dir, "1000000000000.md"), "# Hello\n\nOriginal.", "utf-8");
+    await fs.writeFile(path.join(dir, "2000000000000.md"), "# Hello\n\nUpdated.", "utf-8");
+
+    const result = await diffRevisions("diff-test", 1000000000000, 2000000000000);
+    expect(result.slug).toBe("diff-test");
+    expect(result.timestampA).toBe(1000000000000);
+    expect(result.timestampB).toBe(2000000000000);
+    expect(result.lines).toBeInstanceOf(Array);
+
+    // "# Hello" should be context, "Original." removed, "Updated." added.
+    const ctx = result.lines.filter((l) => l.type === "context");
+    const removed = result.lines.filter((l) => l.type === "remove");
+    const added = result.lines.filter((l) => l.type === "add");
+    expect(ctx.some((l) => l.content === "# Hello")).toBe(true);
+    expect(removed.some((l) => l.content === "Original.")).toBe(true);
+    expect(added.some((l) => l.content === "Updated.")).toBe(true);
+  });
+
+  it("returns empty diff lines (all context) for identical revisions", async () => {
+    await ensureDirectories();
+    const dir = getRevisionsDir("diff-identical");
+    await fs.mkdir(dir, { recursive: true });
+
+    const content = "# Same\n\nIdentical content.";
+    await fs.writeFile(path.join(dir, "1000000000000.md"), content, "utf-8");
+    await fs.writeFile(path.join(dir, "2000000000000.md"), content, "utf-8");
+
+    const result = await diffRevisions("diff-identical", 1000000000000, 2000000000000);
+    expect(result.lines.every((l) => l.type === "context")).toBe(true);
+  });
+
+  it("throws when revision A is missing", async () => {
+    await ensureDirectories();
+    const dir = getRevisionsDir("diff-missing-a");
+    await fs.mkdir(dir, { recursive: true });
+
+    await fs.writeFile(path.join(dir, "2000000000000.md"), "# B", "utf-8");
+
+    await expect(
+      diffRevisions("diff-missing-a", 9999999999999, 2000000000000),
+    ).rejects.toThrow("revision not found: 9999999999999");
+  });
+
+  it("throws when revision B is missing", async () => {
+    await ensureDirectories();
+    const dir = getRevisionsDir("diff-missing-b");
+    await fs.mkdir(dir, { recursive: true });
+
+    await fs.writeFile(path.join(dir, "1000000000000.md"), "# A", "utf-8");
+
+    await expect(
+      diffRevisions("diff-missing-b", 1000000000000, 9999999999999),
+    ).rejects.toThrow("revision not found: 9999999999999");
+  });
+
+  it("handles multi-paragraph change correctly", async () => {
+    await ensureDirectories();
+    const dir = getRevisionsDir("diff-multi");
+    await fs.mkdir(dir, { recursive: true });
+
+    const contentA = [
+      "# Article",
+      "",
+      "First paragraph stays.",
+      "",
+      "Second paragraph is old.",
+      "",
+      "Third paragraph stays.",
+    ].join("\n");
+
+    const contentB = [
+      "# Article",
+      "",
+      "First paragraph stays.",
+      "",
+      "Second paragraph is new.",
+      "",
+      "Third paragraph stays.",
+      "",
+      "Fourth paragraph added.",
+    ].join("\n");
+
+    await fs.writeFile(path.join(dir, "1000000000000.md"), contentA, "utf-8");
+    await fs.writeFile(path.join(dir, "2000000000000.md"), contentB, "utf-8");
+
+    const result = await diffRevisions("diff-multi", 1000000000000, 2000000000000);
+
+    const removed = result.lines.filter((l) => l.type === "remove");
+    const added = result.lines.filter((l) => l.type === "add");
+    const ctx = result.lines.filter((l) => l.type === "context");
+
+    expect(removed.some((l) => l.content === "Second paragraph is old.")).toBe(true);
+    expect(added.some((l) => l.content === "Second paragraph is new.")).toBe(true);
+    expect(added.some((l) => l.content === "Fourth paragraph added.")).toBe(true);
+    expect(ctx.some((l) => l.content === "# Article")).toBe(true);
+    expect(ctx.some((l) => l.content === "First paragraph stays.")).toBe(true);
+    expect(ctx.some((l) => l.content === "Third paragraph stays.")).toBe(true);
   });
 });

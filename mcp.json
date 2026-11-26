@@ -46,6 +46,7 @@
     "list_revisions",
     "read_revision",
     "revert_revision",
+    "diff_revisions",
     "vault_curate",
     "vault_uncurate",
     "vault_create",
