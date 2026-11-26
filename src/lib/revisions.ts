@@ -385,3 +385,107 @@ export async function deleteRevisions(slug: string, tenant?: string): Promise<vo
     }
   }
 }
+
+// ---------------------------------------------------------------------------
+// Line-level diff between two revisions
+// ---------------------------------------------------------------------------
+
+/** A single line in a structured diff output. */
+export interface DiffLine {
+  /** "add" = present only in B, "remove" = present only in A, "context" = unchanged. */
+  type: "add" | "remove" | "context";
+  /** The text content of the line (without trailing newline). */
+  content: string;
+}
+
+/** Result of comparing two revisions. */
+export interface DiffResult {
+  slug: string;
+  timestampA: number;
+  timestampB: number;
+  lines: DiffLine[];
+}
+
+/**
+ * Compute the longest common subsequence (LCS) table using a simple
+ * dynamic-programming approach. Pure JS, no native deps — runs on
+ * Cloudflare Workers.
+ *
+ * Returns an array of `DiffLine` entries representing the line-level diff.
+ */
+export function computeLineDiff(textA: string, textB: string): DiffLine[] {
+  const linesA = textA.split("\n");
+  const linesB = textB.split("\n");
+  const m = linesA.length;
+  const n = linesB.length;
+
+  // Build LCS length table (DP).
+  // dp[i][j] = LCS length of linesA[0..i-1] and linesB[0..j-1].
+  const dp: number[][] = Array.from({ length: m + 1 }, () =>
+    new Array<number>(n + 1).fill(0),
+  );
+
+  for (let i = 1; i <= m; i++) {
+    for (let j = 1; j <= n; j++) {
+      if (linesA[i - 1] === linesB[j - 1]) {
+        dp[i][j] = dp[i - 1][j - 1] + 1;
+      } else {
+        dp[i][j] = Math.max(dp[i - 1][j], dp[i][j - 1]);
+      }
+    }
+  }
+
+  // Backtrack through the DP table to produce the diff.
+  const result: DiffLine[] = [];
+  let i = m;
+  let j = n;
+
+  while (i > 0 || j > 0) {
+    if (i > 0 && j > 0 && linesA[i - 1] === linesB[j - 1]) {
+      result.push({ type: "context", content: linesA[i - 1] });
+      i--;
+      j--;
+    } else if (j > 0 && (i === 0 || dp[i][j - 1] >= dp[i - 1][j])) {
+      result.push({ type: "add", content: linesB[j - 1] });
+      j--;
+    } else {
+      result.push({ type: "remove", content: linesA[i - 1] });
+      i--;
+    }
+  }
+
+  return result.reverse();
+}
+
+/**
+ * Compare two revisions of a wiki page and return a structured line-level diff.
+ *
+ * Both timestamps must refer to existing revisions; throws if either is missing.
+ */
+export async function diffRevisions(
+  slug: string,
+  tsA: number,
+  tsB: number,
+  tenant?: string,
+): Promise<DiffResult> {
+  validateSlug(slug);
+
+  const [contentA, contentB] = await Promise.all([
+    readRevision(slug, tsA, tenant),
+    readRevision(slug, tsB, tenant),
+  ]);
+
+  if (contentA === null) {
+    throw new Error(`revision not found: ${tsA}`);
+  }
+  if (contentB === null) {
+    throw new Error(`revision not found: ${tsB}`);
+  }
+
+  return {
+    slug,
+    timestampA: tsA,
+    timestampB: tsB,
+    lines: computeLineDiff(contentA, contentB),
+  };
+}

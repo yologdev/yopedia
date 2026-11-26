@@ -92,7 +92,7 @@ import { lint, ALL_CHECK_TYPES } from "./lib/lint";
 import { fixLintIssue, type FixResult } from "./lib/lint-fix";
 import { listThreads, getThread, createThread, resolveThread, addComment } from "./lib/talk";
 import { queryByFrontmatter, validateQuery, type DataviewFilter, type DataviewQuery, type DataviewResult } from "./lib/dataview";
-import { listRevisions, readRevision, readRevisionMeta, type Revision } from "./lib/revisions";
+import { listRevisions, readRevision, readRevisionMeta, diffRevisions, type Revision, type DiffResult } from "./lib/revisions";
 import { vaultIdFor, getVault, findVaultByName, createVault, renameVault, deleteVault, addToVault, removeFromVault, listVaults, vaultSlugs } from "./lib/vault";
 import type { Vault, VaultVisibility } from "./lib/vault";
 import { isVaultEligible } from "./lib/commons";
@@ -1630,6 +1630,42 @@ export async function handleRevertRevision(args: {
   return { slug: result.slug, updatedSlugs: result.updatedSlugs };
 }
 
+export async function handleDiffRevisions(args: {
+  slug: string;
+  timestampA: number;
+  timestampB: number;
+}): Promise<DiffResult> {
+  if (!args.slug) {
+    throw new Error("slug is required");
+  }
+  validateSlug(args.slug);
+
+  if (
+    typeof args.timestampA !== "number" ||
+    !Number.isFinite(args.timestampA) ||
+    args.timestampA <= 0
+  ) {
+    throw new Error("timestampA must be a positive number");
+  }
+  if (
+    typeof args.timestampB !== "number" ||
+    !Number.isFinite(args.timestampB) ||
+    args.timestampB <= 0
+  ) {
+    throw new Error("timestampB must be a positive number");
+  }
+
+  // Verify the page exists (resolve tenant).
+  const page = await readWikiPageWithFrontmatter(args.slug);
+  if (!page) {
+    throw new Error(`page not found: ${args.slug}`);
+  }
+
+  const owner = typeof page.frontmatter.owner === "string" ? page.frontmatter.owner : undefined;
+  const tenant = tenantForOwner(owner);
+  return diffRevisions(args.slug, args.timestampA, args.timestampB, tenant);
+}
+
 // ---------------------------------------------------------------------------
 // MCP server setup
 // ---------------------------------------------------------------------------
@@ -1650,7 +1686,7 @@ const SERVER_INSTRUCTIONS = `yopedia is a shared knowledge wiki for humans and a
 - **Expiry** (ISO date): pages go stale. Check expiry and reingest or update when needed.
 - **Sources**: every page tracks its sources with type, URL, and fetch date. Prefer cited claims over unsourced ones.
 - **Talk pages**: use \`list_discussions\`, \`create_discussion\`, and \`add_comment\` to discuss disputes or propose changes. Resolve threads with \`resolve_discussion\`.
-- **Revisions**: all edits are tracked. Use \`list_revisions\` and \`read_revision\` to review history.
+- **Revisions**: all edits are tracked. Use \`list_revisions\` and \`read_revision\` to review history. Use \`diff_revisions\` to see what changed between two revisions.
 - **Lint**: use \`lint_wiki\` to find quality issues (orphans, broken links, stale pages, contradictions). Use \`fix_lint_issue\` to auto-fix them.
 
 ## Agent identity
@@ -3299,6 +3335,52 @@ export function createMcpServer(): McpServer {
   }, async (args) => {
     try {
       const result = await handleRevertRevision(args);
+      return {
+        content: [
+          {
+            type: "text" as const,
+            text: JSON.stringify(result, null, 2),
+          },
+        ],
+      };
+    } catch (err) {
+      return {
+        content: [
+          {
+            type: "text" as const,
+            text: (err as Error).message,
+          },
+        ],
+        isError: true,
+      };
+    }
+  });
+
+  // diff_revisions — Compare two revisions of a wiki page
+  server.registerTool("diff_revisions", {
+    description:
+      "Compare two revisions of a yopedia wiki page and return a structured line-level diff. " +
+      "Use list_revisions first to discover available timestamps.",
+    inputSchema: {
+      slug: z
+        .string()
+        .describe("Slug of the wiki page"),
+      timestampA: z
+        .number()
+        .describe("Unix timestamp in milliseconds for the older revision"),
+      timestampB: z
+        .number()
+        .describe("Unix timestamp in milliseconds for the newer revision"),
+    },
+    annotations: {
+      readOnlyHint: true,
+      destructiveHint: false,
+      idempotentHint: true,
+      openWorldHint: false,
+    },
+  }, async (args) => {
+    try {
+      const result = await handleDiffRevisions(args);
       return {
         content: [
           {

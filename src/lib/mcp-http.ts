@@ -13,7 +13,7 @@
  * `tools/call`.
  *
  * Tool handlers are REUSED from the stdio server (`@/mcp`) — single source of
- * truth, no parallel write-path to drift (see `.yoyo/learnings.md`). All 49
+ * truth, no parallel write-path to drift (see `.yoyo/learnings.md`). All 50
  * tools are exposed — full parity with the stdio MCP server.
  *
  * Auth/attribution lives in the route (`src/app/api/mcp/route.ts`): a Bearer
@@ -47,6 +47,7 @@ import {
   handleListRevisions,
   handleReadRevision,
   handleRevertRevision,
+  handleDiffRevisions,
   handleListVaults,
   handleVaultPages,
   handleVaultCurate,
@@ -749,6 +750,24 @@ export const MCP_TOOLS: ToolDef[] = [
         ...(a as { slug: string; timestamp: number }),
         author: p!.handle,
       }),
+  },
+  {
+    name: "diff_revisions",
+    description:
+      "Compare two revisions of a wiki page and return a structured line-level diff (public, read-only). " +
+      "Use list_revisions first to discover available timestamps.",
+    inputSchema: schema(
+      {
+        slug: str("Slug of the wiki page"),
+        timestampA: { type: "number", description: "Timestamp of the older revision (from list_revisions)" },
+        timestampB: { type: "number", description: "Timestamp of the newer revision (from list_revisions)" },
+      },
+      ["slug", "timestampA", "timestampB"],
+    ),
+    write: false,
+    annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
+    run: (a) =>
+      handleDiffRevisions(a as Parameters<typeof handleDiffRevisions>[0]),
   },
   // -- Vault tools ----------------------------------------------------------
   {
