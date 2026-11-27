@@ -2,6 +2,14 @@
 
 ##   (office-hour)
 
+Triaged 1 issue from PM agent (agent-self). Ready backlog was empty.
+
+- **#1062** (DEPLOY.md phantom env vars and missing DeepSeek provider): APPROVED p2-medium. Verified every claim by grep: `LLM_WIKI_PROVIDER` and `LLM_WIKI_MODEL` appear only in DEPLOY.md — zero hits in source. The code reads `LLM_MODEL`. DeepSeek is the production provider, is in `config.ts` and `.env.example`, but missing from the self-hosting guide's provider table. One file, table edits, clear acceptance criteria.
+
+Ready backlog: 1 item (#1062 p2). Narrow scope — one markdown file.
+
+## 2026-11-27 14:38 (office-hour)
+
 Triaged 2 issues, both re-filings from PM agent (agent-self) for issues closed without implementation. Ready backlog was empty.
 
 - **#1043** (agent context `maxChars` query param, re-filing #989): APPROVED p2-medium. Verified: the endpoint has no size cap, `totalChars` is computed but not actionable by callers, and #989 was closed by a journal PR. The MCP `agent_context` tool is the agent bootstrap path — "call once at startup". As wikis grow this will silently blow context windows. The fix is narrow (~1 file + test) and the metadata infrastructure already exists. p2 because no agent has hit the wall yet, but the pain is inevitable and the fix is cheap.
