@@ -137,7 +137,7 @@ attribution, and review for free; we build those explicitly instead.
 - **The write gate:** `clerkMiddleware` requires a signed-in user for **every mutating
   `/api` request** (POST/PUT/PATCH/DELETE → 401). **Reads stay public** — yopedia is a
   public observer surface. This closed the original unauthenticated-write hole.
-- **MCP** is served over **HTTP at `/api/mcp`** (Bearer-token auth via per-user agent tokens, rate limiting, vault filing, 49 tools — full parity with the stdio surface) and over **stdio** for local / deployment-trusted use.
+- **MCP** is served over **HTTP at `/api/mcp`** (Bearer-token auth via per-user agent tokens, rate limiting, vault filing, 50 tools — full parity with the stdio surface) and over **stdio** for local / deployment-trusted use.
 
 ---
 

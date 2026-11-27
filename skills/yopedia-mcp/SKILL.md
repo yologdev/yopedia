@@ -51,7 +51,7 @@ claude mcp add --transport http yopedia https://yopedia.yuanhao-li.workers.dev/a
 ```
 Omit the `Authorization` header for read-only access.
 
-## Tools (49)
+## Tools (50)
 
 ### Read & search
 
@@ -126,6 +126,7 @@ Omit the `Authorization` header for read-only access.
 |------|------|--------------|
 | `list_revisions` | — | List revision history for a wiki page (timestamps + metadata) |
 | `read_revision` | — | Read the content of a specific revision by slug + timestamp |
+| `diff_revisions` | — | Compare two revisions of a wiki page and return a line-level diff |
 | `revert_revision` | Bearer | Revert a wiki page to a previous revision |
 
 ### Agents
