@@ -42,6 +42,7 @@ Configure your LLM provider by setting the relevant API key in `.env`:
 | `ANTHROPIC_API_KEY` | Anthropic Claude | `sk-ant-api03-...` |
 | `OPENAI_API_KEY` | OpenAI | `sk-proj-...` |
 | `GOOGLE_GENERATIVE_AI_API_KEY` | Google Gemini | `AIza...` |
+| `DEEPSEEK_API_KEY` | DeepSeek | `sk-...` |
 | `OLLAMA_BASE_URL` | Ollama (local) | `http://host.docker.internal:11434` |
 
 You only need **one** provider. The app auto-detects which key is set.
@@ -50,8 +51,7 @@ You only need **one** provider. The app auto-detects which key is set.
 
 | Variable | Description | Default |
 |---|---|---|
-| `LLM_WIKI_PROVIDER` | Force a specific provider (`anthropic`, `openai`, `google`, `ollama`) | Auto-detected |
-| `LLM_WIKI_MODEL` | Override the default model name | Provider default |
+| `LLM_MODEL` | Override the default model name | Provider default |
 | `EMBEDDING_MODEL` | Override the embedding model name | Provider default |
 | `PORT` | Server port inside the container | `3000` |
 
