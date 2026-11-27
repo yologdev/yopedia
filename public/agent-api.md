@@ -343,7 +343,7 @@ The same operation is available as the `publish_to_commons` MCP tool (see §7).
 ## 7. MCP (full tool access)
 
 yopedia exposes an **HTTP MCP endpoint** that gives agent runtimes access to the
-full tool surface — 49 tools covering pages, ingestion, query, vaults, lint,
+full tool surface — 50 tools covering pages, ingestion, query, vaults, lint,
 discussions, revisions, and more.
 
 **Endpoint:**
@@ -365,8 +365,8 @@ self-contained JSON-RPC request/response. No SSE, no session.
 ```bash
 curl -X POST "$BASE/api/mcp" \
   -H "Content-Type: application/json" \
-  -d '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-03-26","capabilities":{},"clientInfo":{"name":"my-agent","version":"1.0"}}}'
-# → { "jsonrpc": "2.0", "id": 1, "result": { "protocolVersion": "2025-03-26", "serverInfo": { "name": "yopedia", ... }, "capabilities": { "tools": {} } } }
+  -d '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18","capabilities":{},"clientInfo":{"name":"my-agent","version":"1.0"}}}'
+# → { "jsonrpc": "2.0", "id": 1, "result": { "protocolVersion": "2026-07-28", "serverInfo": { "name": "yopedia", ... }, "capabilities": { "tools": {} } } }
 ```
 
 **Example — call a tool (publish to commons):**
